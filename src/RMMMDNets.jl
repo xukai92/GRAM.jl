@@ -25,44 +25,6 @@ export MMDNet, RMMMDNet, train!
 
 ###
 
-using DensityRatioEstimation: MMDAnalytical, _estimate_ratio, pairwise_sqd, gaussian_gram_by_pairwise_sqd
-
-function estimate_ratio_and_compute_mmd_sq(pdot_dede, pdot_denu, pdot_nunu, σ)
-    Kdede = gaussian_gram_by_pairwise_sqd(pdot_dede, σ)
-    Kdenu = gaussian_gram_by_pairwise_sqd(pdot_denu, σ)
-    Knunu = gaussian_gram_by_pairwise_sqd(pdot_nunu, σ)
-    ratio = _estimate_ratio(MMDAnalytical(), Kdede, Kdenu)
-    mmd_sq = mean(Kdede) - 2mean(Kdenu) + mean(Knunu)
-    return ratio, mmd_sq
-end
-
-# TODO: implement running average of median
-function estimate_ratio_and_compute_mmd(x_de, x_nu; σs=[], verbose=false)
-    pdot_dede = pairwise_sqd(x_de)
-    pdot_denu = pairwise_sqd(x_de, x_nu)
-    pdot_nunu = pairwise_sqd(x_nu)
-    
-    if isempty(σs)
-        σ = sqrt(median(vcat(vec.(Flux.data.([pdot_dede, pdot_denu, pdot_nunu])))))
-        if verbose
-            @info "Automatically choose σ using the median of pairwise distances: $σ."
-        end
-        @tb @info "train" σ_median=σ log_step_increment=0
-        σs = [σ]
-    end
-
-    ratio, mmd_sq = mapreduce(
-        σ -> estimate_ratio_and_compute_mmd_sq(pdot_dede, pdot_denu, pdot_nunu, σ), 
-        (t1, t2) -> (t1[1] + t2[1], t1[2] + t2[2]), 
-        σs
-    )
-    
-    n = convert(Float32, length(σs))
-    return (ratio=ratio / n, mmd=sqrt(mmd_sq + 1f-6))
-end
-
-###
-
 function get_data(dataset::String)
     rng = MersenneTwister(1234)
     if dataset == "mnist"
@@ -114,13 +76,13 @@ function get_model(model_name::String, args::NamedTuple, data::Data, exp_name::S
     if args.opt == "rmsprop"
         opt = RMSProp(args.lr)
     end
-    g = Generator(args.D_z, args.D_h, data.dim, args.σ, args.σ_last)
+    g = Generator(args.D_z, args.D_h, data.dim, args.σ, args.σ_last, args.batch_size_gen)
     if model_name == "mmdnet"
-        m = MMDNet(Ref(0), logger, g, opt, args.σs)
+        m = MMDNet(Ref(0), logger, g, Flux.params(g), opt, args.σs)
     end
     if model_name == "rmmmdnet"
         f = Projector(data.dim, args.D_h, args.D_fx, args.σ)
-        m = RMMMDNet(Ref(0), logger, g, f, opt, args.σs)
+        m = RMMMDNet(Ref(0), logger, g, Flux.params(g), f, Flux.params(f), opt, args.σs)
     end
     @info "Init $model_name with $(nparams(m) |> Humanize.digitsep) parameters" logdir
     m = use_gpu.x ? gpu(m) : m

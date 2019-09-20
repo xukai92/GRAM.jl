@@ -16,10 +16,17 @@ function get_args(
     ]
 
     args_dict = Dict{Symbol,Any}(
+        :dataset => dataset,
+        :model_name => model_name,
         :batch_size => 500,
         :batch_size_gen => 500,
-        :opt => "rmsprop"
+        :lr => 1f-3
     )
+    if model_name == "mmdnet"
+        args_dict[:opt] = "rmsprop"
+    elseif model_name == "rmmmdnet"
+        args_dict[:opt] = "adam"
+    end
 
     if dataset == "gaussian"
         args_dict[:n_epochs] = 200
@@ -31,7 +38,6 @@ function get_args(
         if model_name == "rmmmdnet"
             args_dict[:D_fx] = 2
         end
-        args_dict[:lr] = 1f-3 
     end
     
     if dataset == "ring"
@@ -44,7 +50,6 @@ function get_args(
         if model_name == "rmmmdnet"
             args_dict[:D_fx] = 1
         end
-        args_dict[:lr] = 1f-4
     end
     
     if dataset == "mnist"
@@ -57,7 +62,6 @@ function get_args(
         if model_name == "rmmmdnet"
             args_dict[:D_fx] = 100
         end
-        args_dict[:lr] = 1f-3
     end
     
     # Oeverride
@@ -70,6 +74,8 @@ function get_args(
 
     # Generate experiment name from dict
     exclude = [
+        :dataset,
+        :model_name,
         :n_epochs,
         :batch_size, 
         :batch_size_gen, 
