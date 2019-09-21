@@ -16,10 +16,12 @@ function estimate_ratio(x_de, x_nu; σs=[], verbose=false)
         Kdede = gaussian_gram_by_pairwise_sqd(pdot_dede, σ)
         Kdenu = gaussian_gram_by_pairwise_sqd(pdot_denu, σ)
         n_de, n_nu = size(Kdenu)
-        return convert(Float32, n_de / n_nu) * (Kdede \ sum(Kdenu; dims=2)[:,1])
+        return convert(Float32, n_de / n_nu) * ((Kdede + diagm(0 => fill(1f-3 * one(Float32), size(Kdede, 1)))) \ sum(Kdenu; dims=2)[:,1])
     end
-    return multi_run(_estimate_ratio, x_de, x_nu, σs, verbose)
+    return multi_run(_estimate_ratio, x_de, x_nu, σs, verbose) / convert(Float32, length(σs))
 end
+
+# TODO: test against TF implementation from Akash
 
 # TODO: implement running average of median
 function multi_run(f_run, x_de, x_nu, σs, verbose)
@@ -52,7 +54,6 @@ function train!(m::AbstractGenerativeModel, n_epochs::Int, dl::DataLoader)
     with_logger(m.logger) do
         @showprogress for epoch in 1:n_epochs, (x_data,) in dl.train
             # Step training
-            Flux.testmode!(m, false)
             step_info = step!(m, x_data)
             m.iter.x += 1
             # Logging
@@ -80,9 +81,11 @@ Flux.mapchildren(f, m::MMDNet) = MMDNet(m.iter, m.logger, f(m.g), m.ps_g, m.opt,
 Flux.children(m::MMDNet) = (m.iter, m.logger, m.g, m.ps_g, m.opt, m.σs)
 
 function step!(m::MMDNet, x_data)
+    Flux.testmode!(m, false)
     x_gen = rand(m.g)
     loss_g = compute_mmd(x_gen, x_data; σs=m.σs)
     update_by_loss!(loss_g, m.ps_g, m.opt)
+
     return (
         loss_g=loss_g, 
         batch_size=last(size(x_data)), 
@@ -110,6 +113,9 @@ Flux.mapchildren(f, m::RMMMDNet) = RMMMDNet(m.iter, m.logger, f(m.g), m.ps_g, f(
 Flux.children(m::RMMMDNet) = (m.iter, m.logger, m.g, m.ps_g, m.f, m.ps_f, m.opt, m.σs)
 
 function step!(m::RMMMDNet, x_data)
+    # Train f
+    Flux.testmode!(m.f, false)
+    Flux.testmode!(m.g, true)
     # Sample from generator
     x_gen = rand(m.g)
     # Step projector
@@ -117,12 +123,17 @@ function step!(m::RMMMDNet, x_data)
     ratio = estimate_ratio(fx_gen, fx_data; σs=m.σs)
     loss_f = -mean(ratio)
     update_by_loss!(loss_f, m.ps_f, m.opt)
-    # Reuse samples
-    x_gen = x_gen |> Flux.data
+
+    # Train g
+    Flux.testmode!(m.f, true)
+    Flux.testmode!(m.g, false)
+    # Sample from generator
+    x_gen = rand(m.g)
     # Step generator
     fx_gen, fx_data = m.f(x_gen), m.f(x_data)
     loss_g = compute_mmd(fx_gen, fx_data; σs=m.σs)
     update_by_loss!(loss_g, m.ps_g, m.opt)
+
     return (
         loss_f=loss_f, loss_g=loss_g, 
         batch_size=last(size(x_data)), 

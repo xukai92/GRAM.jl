@@ -3,11 +3,19 @@
 parse_op(op::String) = eval(Symbol(op))
 parse_op(op)= op
 
-function build_mlp_chain(D_in, D_h, D_out, σ, σ_last)
+function build_dense_with_norm(D_in, D_out, σ, with_norm::Bool=false)
+    return if with_norm
+        Chain(Dense(D_in, D_out), BatchNorm(D_out, σ))
+    else
+        Dense(D_in, D_out, σ)
+    end
+end
+
+function build_mlp_chain(D_in, D_h, D_out, σ, σ_last; with_norm::Bool=false)
     n_layers = length(D_h)
     return Chain(
-        Dense(D_in, D_h[1]), BatchNorm(D_h[1], σ),
-        [Chain(Dense(D_h[i], D_h[i+1]), BatchNorm(D_h[i+1], σ)) for i in 1:n_layers-1]..., 
+        build_dense_with_norm(D_in, D_h[1], σ, with_norm),
+        [build_dense_with_norm(D_h[i], D_h[i+1], σ, with_norm) for i in 1:n_layers-1]...,
         Dense(D_h[n_layers], D_out, σ_last)
     )
 end
@@ -34,7 +42,7 @@ Flux.@treelike(Generator)
 
 function Generator(D_z::Int, D_h::AbstractVector{Int}, D_x::Int, σ, σ_last, n_default::Int)
     σ, σ_last = parse_op(σ), parse_op(σ_last)
-    f = build_mlp_chain(D_z, D_h, D_x, σ, σ_last)
+    f = build_mlp_chain(D_z, D_h, D_x, σ, σ_last; with_norm=false)
     return Generator(D_z, f, n_default)
 end
 
@@ -56,7 +64,7 @@ Flux.@treelike(Projector)
 
 function Projector(D_x::Int, D_h::AbstractArray{Int}, D_fx::Int, σ)
     σ = parse_op(σ)
-    f = build_mlp_chain(D_x, D_h, D_fx, σ, identity)
+    f = build_mlp_chain(D_x, D_h, D_fx, σ, identity; with_norm=false)
     return Projector(f)
 end
 
