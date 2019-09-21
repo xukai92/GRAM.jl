@@ -43,16 +43,14 @@ function get_args(
     end
     
     if dataset == "ring"
-        args_dict[:n_epochs] = 50
+        args_dict[:n_epochs] = 100
         args_dict[:lr] = 1f-3
         args_dict[:D_z] = 10
         args_dict[:Dg_h] = "100,100"
         args_dict[:σ] = "relu"
         args_dict[:σ_last] = "identity"
-        if model_name == "mmdnet"
-            args_dict[:σs] = "1,2,4"
-        elseif model_name == "rmmmdnet"
-            args_dict[:σs] = "1,2,4,8"
+        args_dict[:σs] = "1,2,4"
+        if model_name == "rmmmdnet"
             args_dict[:Df_h] = "100,10"
             args_dict[:D_fx] = 5
         end

@@ -1,27 +1,43 @@
 using DensityRatioEstimation: pairwise_sqd, gaussian_gram_by_pairwise_sqd
 
+_compute_mmd_sq(Kdede, Kdenu, Knunu) = mean(Kdede) - 2mean(Kdenu) + mean(Knunu)
+
 function compute_mmd(x_de, x_nu; σs=[], verbose=false)
-    function _compute_mmd_sq(pdot_dede, pdot_denu, pdot_nunu, σ)
+    function f(pdot_dede, pdot_denu, pdot_nunu, σ)
         Kdede = gaussian_gram_by_pairwise_sqd(pdot_dede, σ)
         Kdenu = gaussian_gram_by_pairwise_sqd(pdot_denu, σ)
         Knunu = gaussian_gram_by_pairwise_sqd(pdot_nunu, σ)
-        return mean(Kdede) - 2mean(Kdenu) + mean(Knunu)
+        return _compute_mmd_sq(Kdede, Kdenu, Knunu)
     end
-    mmd_sq = multi_run(_compute_mmd_sq, x_de, x_nu, σs, verbose)
+    mmd_sq = multi_run(f, x_de, x_nu, σs, verbose)
     return sqrt(mmd_sq + 1f-6)
 end
 
-function estimate_ratio(x_de, x_nu; σs=[], verbose=false)
-    function _estimate_ratio(pdot_dede, pdot_denu, pdot_nunu, σ)
-        Kdede = gaussian_gram_by_pairwise_sqd(pdot_dede, σ)
-        Kdenu = gaussian_gram_by_pairwise_sqd(pdot_denu, σ)
-        n_de, n_nu = size(Kdenu)
-        return convert(Float32, n_de / n_nu) * ((Kdede + diagm(0 => fill(1f-3 * one(Float32), size(Kdede, 1)))) \ sum(Kdenu; dims=2)[:,1])
-    end
-    return multi_run(_estimate_ratio, x_de, x_nu, σs, verbose) / convert(Float32, length(σs))
+function _estimate_ratio(Kdede, Kdenu)
+    n_de, n_nu = size(Kdenu)
+    Kdede_stable = Kdede + diagm(0 => fill(1f-3 * one(Float32), size(Kdede, 1)))
+    return convert(Float32, n_de / n_nu) * (Kdede_stable \ sum(Kdenu; dims=2)[:,1])
 end
 
-# TODO: test against TF implementation from Akash
+function estimate_ratio(x_de, x_nu; σs=[], verbose=false)
+    function f(pdot_dede, pdot_denu, pdot_nunu, σ)
+        Kdede = gaussian_gram_by_pairwise_sqd(pdot_dede, σ)
+        Kdenu = gaussian_gram_by_pairwise_sqd(pdot_denu, σ)
+        return _estimate_ratio(Kdede, Kdenu)
+    end
+    return multi_run(f, x_de, x_nu, σs, verbose) / convert(Float32, length(σs))
+end
+
+function estimate_ratio_compute_mmd(x_de, x_nu; σs=[], verbose=false)
+    function f(pdot_dede, pdot_denu, pdot_nunu, σ)
+        Kdede = gaussian_gram_by_pairwise_sqd(pdot_dede, σ)
+        Kdenu = gaussian_gram_by_pairwise_sqd(pdot_denu, σ)
+        Knunu = gaussian_gram_by_pairwise_sqd(pdot_nunu, σ)
+        return (_estimate_ratio(Kdede, Kdenu), _compute_mmd_sq(Kdede, Kdenu, Knunu))
+    end
+    ratio, mmd_sq = multi_run(f, x_de, x_nu, σs, verbose)
+    return (ratio=ratio / convert(Float32, length(σs)), mmd=sqrt(mmd_sq + 1f-6))
+end
 
 # TODO: implement running average of median
 function multi_run(f_run, x_de, x_nu, σs, verbose)
@@ -38,7 +54,7 @@ function multi_run(f_run, x_de, x_nu, σs, verbose)
         σs = [σ]
     end
 
-    return mapreduce(σ -> f_run(pdot_dede, pdot_denu, pdot_nunu, σ), +, σs)
+    return mapreduce(σ -> f_run(pdot_dede, pdot_denu, pdot_nunu, σ), (x, y) -> x .+ y, σs)
 end
 
 ###
@@ -113,26 +129,33 @@ Flux.mapchildren(f, m::RMMMDNet) = RMMMDNet(m.iter, m.logger, f(m.g), m.ps_g, f(
 Flux.children(m::RMMMDNet) = (m.iter, m.logger, m.g, m.ps_g, m.f, m.ps_f, m.opt, m.σs)
 
 function step!(m::RMMMDNet, x_data)
-    # Train f
-    Flux.testmode!(m.f, false)
-    Flux.testmode!(m.g, true)
-    # Sample from generator
-    x_gen = rand(m.g)
-    # Step projector
-    fx_gen, fx_data = m.f(x_gen), m.f(x_data)
-    ratio = estimate_ratio(fx_gen, fx_data; σs=m.σs)
-    loss_f = -mean(ratio)
-    update_by_loss!(loss_f, m.ps_f, m.opt)
+    # # Train f
+    # Flux.testmode!(m.f, false)
+    # Flux.testmode!(m.g, true)
+    # # Sample from generator
+    # x_gen = rand(m.g)
+    # # Step projector
+    # fx_gen, fx_data = m.f(x_gen), m.f(x_data)
+    # ratio = estimate_ratio(fx_gen, fx_data; σs=m.σs)
+    # loss_f = -mean(ratio)
+    # update_by_loss!(loss_f, m.ps_f, m.opt)
 
-    # Train g
-    Flux.testmode!(m.f, true)
-    Flux.testmode!(m.g, false)
-    # Sample from generator
+    # # Train g
+    # Flux.testmode!(m.f, true)
+    # Flux.testmode!(m.g, false)
+    # # Sample from generator
+    # x_gen = rand(m.g)
+    # # Step generator
+    # fx_gen, fx_data = m.f(x_gen), m.f(x_data)
+    # loss_g = compute_mmd(fx_gen, fx_data; σs=m.σs)
+    # update_by_loss!(loss_g, m.ps_g, m.opt)
+
+    Flux.testmode!(m, false)
     x_gen = rand(m.g)
-    # Step generator
     fx_gen, fx_data = m.f(x_gen), m.f(x_data)
-    loss_g = compute_mmd(fx_gen, fx_data; σs=m.σs)
-    update_by_loss!(loss_g, m.ps_g, m.opt)
+    ratio, mmd = estimate_ratio_compute_mmd(fx_gen, fx_data; σs=m.σs)
+    loss_f, loss_g = -mean(ratio), mmd
+    update_by_loss!(loss_f + loss_g, Flux.Params([m.ps_f..., m.ps_g...]), m.opt)
 
     return (
         loss_f=loss_f, loss_g=loss_g, 
