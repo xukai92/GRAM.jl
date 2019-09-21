@@ -19,8 +19,8 @@ function get_args(
         :seed => 1234,
         :dataset => dataset,
         :model_name => model_name,
-        :batch_size => 500,
-        :batch_size_gen => 500,
+        :batch_size => 200,
+        :batch_size_gen => 200,
     )
     if model_name == "mmdnet"
         args_dict[:opt] = "rmsprop"
@@ -31,6 +31,7 @@ function get_args(
     if dataset == "gaussian"
         args_dict[:n_epochs] = 100
         args_dict[:lr] = 1f-3
+        args_dict[:base] = "uniform"
         args_dict[:D_z] = 10
         args_dict[:Dg_h] = "50,50"
         args_dict[:σ] = "tanh"
@@ -43,21 +44,23 @@ function get_args(
     end
     
     if dataset == "ring"
-        args_dict[:n_epochs] = 100
+        args_dict[:n_epochs] = 200
         args_dict[:lr] = 1f-3
-        args_dict[:D_z] = 10
-        args_dict[:Dg_h] = "100,100"
+        args_dict[:base] = "gaussian"
+        args_dict[:D_z] = 256
+        args_dict[:Dg_h] = "128"
         args_dict[:σ] = "relu"
         args_dict[:σ_last] = "identity"
-        args_dict[:σs] = "1,2,4"
+        args_dict[:σs] = "1"
         if model_name == "rmmmdnet"
-            args_dict[:Df_h] = "100,10"
-            args_dict[:D_fx] = 5
+            args_dict[:Df_h] = "128"
+            args_dict[:D_fx] = 2
         end
     end
     
     if dataset == "mnist"
         args_dict[:n_epochs] = 10
+        args_dict[:base] = "uniform"
         args_dict[:D_z] = 100
         args_dict[:Dg_h] = "200,400,800"
         args_dict[:σ] = "relu"

@@ -32,23 +32,43 @@ function build_conv_chain(D_in, D_h, D_out, σ, σ_last)
     )
 end
 
-struct Generator
+abstract type AbstractBaseGenerator <: ContinuousMultivariateDistribution end
+
+struct UniformBase <: AbstractBaseGenerator
     D_z::Int
+end
+
+function Distributions.rand(rng::AbstractRNG, b::UniformBase, n::Int)
+    z = 2 * rand(rng, Float32, b.D_z, n) .- 1
+    return use_gpu.x ? gpu(z) : z
+end
+
+struct GaussianBase <: AbstractBaseGenerator
+    D_z::Int
+end
+
+function Distributions.rand(rng::AbstractRNG, b::GaussianBase, n::Int)
+    z = randn(rng, Float32, b.D_z, n)
+    return use_gpu.x ? gpu(z) : z
+end
+
+struct Generator
+    base::AbstractBaseGenerator
     f
     n_default::Int
 end
 
 Flux.@treelike(Generator)
 
-function Generator(D_z::Int, D_h::AbstractVector{Int}, D_x::Int, σ, σ_last, n_default::Int)
+function Generator(base::AbstractBaseGenerator, D_z::Int, D_h::AbstractVector{Int}, D_x::Int, σ, σ_last, n_default::Int)
+    @assert base.D_z == D_z
     σ, σ_last = parse_op(σ), parse_op(σ_last)
     f = build_mlp_chain(D_z, D_h, D_x, σ, σ_last; with_norm=false)
-    return Generator(D_z, f, n_default)
+    return Generator(base, f, n_default)
 end
 
 function Distributions.rand(rng::AbstractRNG, g::Generator, n::Int=g.n_default)
-    z = 2 * rand(rng, Float32, g.D_z, n) .- 1
-    z = use_gpu.x ? gpu(z) : z
+    z = rand(g.base, n)
     return g.f(z)
 end
 

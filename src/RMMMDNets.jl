@@ -72,7 +72,12 @@ function get_model(args::NamedTuple, data::Data)
     elseif args.opt == "rmsprop"
         opt = RMSProp(args.lr)
     end
-    g = Generator(args.D_z, args.Dg_h, data.dim, args.σ, args.σ_last, args.batch_size_gen)
+    if args.base == "uniform"
+        base = UniformBase(args.D_z)
+    elseif args.base == "gaussian"
+        base = GaussianBase(args.D_z)
+    end
+    g = Generator(base, args.D_z, args.Dg_h, data.dim, args.σ, args.σ_last, args.batch_size_gen)
     if args.model_name == "mmdnet"
         m = MMDNet(Ref(0), logger, g, Flux.params(g), opt, args.σs)
     elseif args.model_name == "rmmmdnet"

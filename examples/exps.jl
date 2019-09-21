@@ -24,7 +24,7 @@ args_list = [get_args(
     dataset, 
     model_name; 
     override=Dict(:seed => seed), 
-    suffix="seed=$seed-bugfixing"
+    suffix="seed=$seed"
 ) for seed in [1, 2, 3, 4]]
 
 ###

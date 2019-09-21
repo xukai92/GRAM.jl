@@ -36,7 +36,10 @@ function estimate_ratio_compute_mmd(x_de, x_nu; σs=[], verbose=false)
         return (_estimate_ratio(Kdede, Kdenu), _compute_mmd_sq(Kdede, Kdenu, Knunu))
     end
     ratio, mmd_sq = multi_run(f, x_de, x_nu, σs, verbose)
-    return (ratio=ratio / convert(Float32, length(σs)), mmd=sqrt(mmd_sq + 1f-6))
+    return (
+        ratio=ratio / convert(Float32, length(σs)), 
+        mmd=sqrt(mmd_sq + 1f-6)
+    )
 end
 
 # TODO: implement running average of median
@@ -154,10 +157,14 @@ function step!(m::RMMMDNet, x_data)
     x_gen = rand(m.g)
     fx_gen, fx_data = m.f(x_gen), m.f(x_data)
     ratio, mmd = estimate_ratio_compute_mmd(fx_gen, fx_data; σs=m.σs)
-    loss_f, loss_g = -mean(ratio), mmd
+    ratio_minus1sq_mean = mean((ratio .- 1) .^ 2)
+    raito_mean = mean(ratio)
+    loss_f, loss_g = -(ratio_minus1sq_mean + raito_mean), mmd
     update_by_loss!(loss_f + loss_g, Flux.Params([m.ps_f..., m.ps_g...]), m.opt)
 
     return (
+        ratio_minus1sq_mean=ratio_minus1sq_mean,
+        raito_mean=raito_mean,
         loss_f=loss_f, loss_g=loss_g, 
         batch_size=last(size(x_data)), 
         batch_size_gen=last(size(x_gen)),

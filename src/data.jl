@@ -15,7 +15,7 @@ end
 
 Distributions.rand(rng::AbstractRNG, ring::Ring, n::Int) = convert.(typeof(ring.σ), rand(rng, make_ringmixture(ring), n))
 
-Distributions.logpdf(ring::Ring, x) = logpdf(make_ringmixture(ring), x)
+Distributions.logpdf(ring::Ring, x::AbstractArray{T,2}) where {T} = logpdf(make_ringmixture(ring), x)
 
 ###
 
