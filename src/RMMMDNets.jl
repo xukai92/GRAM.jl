@@ -43,22 +43,40 @@ function get_data(dataset::String)
     return Data(dataset, X_train)
 end
 
-function vis(d::Data, g::Generator)
+function plot!(d::Data, g::Generator)
     rng = MersenneTwister(1)
-    fig = plt.figure(figsize=(3.5, 3.5))
     if d.dataset == "mnist" 
-        X_data = d.train
-        X_gen = rand(rng, g, 32) |> cpu |> Flux.data
-        plot_grayimg!(hcat(X_data[:,shuffle(rng, 1:last(size(X_data)))[1:32]], X_gen))
+        x_data = d.train
+        x_gen = rand(rng, g, 32) |> cpu |> Flux.data
+        plot_grayimg!(hcat(x_data[:,shuffle(rng, 1:last(size(x_data)))[1:32]], x_gen))
     elseif d.dataset in ["gaussian", "ring"]
-        X_data = d.train
-        X_gen = rand(rng, g, last(size(X_data))) |> cpu |> Flux.data
-        plt.scatter(X_data[1,:], X_data[2,:], marker=".", label="data", alpha=0.5)
-        plt.scatter(X_gen[1,:],  X_gen[2,:],  marker=".", label="gen",  alpha=0.5)
-        autoset_lim!(X_data)
+        x_data = d.train
+        x_gen = rand(rng, g, last(size(x_data))) |> cpu |> Flux.data
+        plt.scatter(x_data[1,:], x_data[2,:], marker=".", label="data", alpha=0.5)
+        plt.scatter(x_gen[1,:],  x_gen[2,:],  marker=".", label="gen",  alpha=0.5)
+        autoset_lim!(x_data)
         plt.legend(fancybox=true, framealpha=0.5)
     end
-    return fig
+end
+
+function plot!(d::Data, g::Generator, f::Projector)
+    rng = MersenneTwister(1)
+    if d.dataset == "mnist" 
+        x_data = d.train
+        x_gen = rand(rng, g, 32) 
+        fx_data = f(x_data) |> cpu |> Flux.data
+        fx_gen = f(x_gen) |> cpu |> Flux.data
+        plot_grayimg!(hcat(fx_data[:,shuffle(rng, 1:last(size(fx_data)))[1:32]], fx_gen))
+    elseif d.dataset in ["gaussian", "ring"]
+        x_data = d.train
+        x_gen = rand(rng, g, last(size(x_data)))
+        fx_data = f(x_data) |> cpu |> Flux.data
+        fx_gen = f(x_gen) |> cpu |> Flux.data
+        plt.scatter(fx_data[1,:], fx_data[2,:], marker=".", label="data", alpha=0.5)
+        plt.scatter(fx_gen[1,:],  fx_gen[2,:],  marker=".", label="gen",  alpha=0.5)
+        autoset_lim!(fx_data)
+        plt.legend(fancybox=true, framealpha=0.5)
+    end
 end
 
 function get_model(args::NamedTuple, data::Data)
@@ -89,6 +107,6 @@ function get_model(args::NamedTuple, data::Data)
     return m
 end
 
-export get_data, vis, get_model
+export get_data, evaluate, get_model
 
 end # module

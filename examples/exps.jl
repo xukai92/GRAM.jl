@@ -14,8 +14,8 @@ rmmmdnets_path = pathof(RMMMDNets) |> splitdir |> first |> splitdir |> first
 include("$rmmmdnets_path/scripting.jl")
 
 # dataset = "gaussian"
-#  dataset = "ring"
-dataset = "mnist"
+ dataset = "ring"
+# dataset = "mnist"
 
 # model_name = "mmdnet"
 model_name = "rmmmdnet"
@@ -36,7 +36,7 @@ args_list = [get_args(
 
     model = get_model(args, data)
 
-    vis(data, model)
+    evaluate(data, model)
 
     dataloader = DataLoader(data, args.batch_size)
     

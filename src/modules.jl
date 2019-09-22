@@ -78,6 +78,7 @@ Distributions.rand(g::Generator, n::Int) = rand(GLOBAL_RNG, g, n)
 
 struct Projector
     f
+    D_fx::Int
 end
 
 Flux.@treelike(Projector)
@@ -85,7 +86,7 @@ Flux.@treelike(Projector)
 function Projector(D_x::Int, D_h::AbstractArray{Int}, D_fx::Int, σ)
     σ = parse_op(σ)
     f = build_mlp_chain(D_x, D_h, D_fx, σ, identity; with_norm=false)
-    return Projector(f)
+    return Projector(f, D_fx)
 end
 
 (p::Projector)(x) = p.f(x)

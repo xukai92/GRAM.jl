@@ -75,6 +75,19 @@ function update_by_loss!(loss, ps, opt; n=1)
     end
 end
 
+using Tracker: Params, losscheck, @interrupts, Grads, tracker, extract_grad!, zero_grad!, grad
+
+function Tracker.gradient(f, xs::Params; once=true)
+  l = f()
+  losscheck(l)
+  @interrupts back!(l; once=once)
+  gs = Grads()
+  for x in xs
+    gs[tracker(x)] = extract_grad!(x)
+  end
+  return gs
+end
+
 function train!(m::AbstractGenerativeModel, n_epochs::Int, dl::DataLoader)
     with_logger(m.logger) do
         @showprogress for epoch in 1:n_epochs, (x_data,) in dl.train
@@ -85,7 +98,7 @@ function train!(m::AbstractGenerativeModel, n_epochs::Int, dl::DataLoader)
             Flux.testmode!(m)
             @info "train" step_info...
             if m.iter.x % 10 == 0
-                @info "eval" gen=vis(dl.data, m) log_step_increment=0
+                @info "eval" evaluate(dl.data, m)... log_step_increment=0
             end
         end
     end
@@ -119,7 +132,11 @@ function step!(m::MMDNet, x_data)
     )
 end
 
-vis(d::Data, m::MMDNet) = vis(d, m.g)
+function evaluate(d::Data, m::MMDNet)
+    fig = plt.figure(figsize=(3.5, 3.5))
+    plot!(d, m.g)
+    return (gen=fig,)
+end
 
 # RMMMDNet
 
@@ -140,49 +157,52 @@ end
 Flux.children(m::RMMMDNet) = (m.iter, m.logger, m.g, m.ps_g, m.f, m.ps_f, m.opt, m.σs)
 
 function step!(m::RMMMDNet, x_data)
-    # Train f
+    # Training mode
     Flux.testmode!(m.f, false)
-    Flux.testmode!(m.g, true)
-    # Sample from generator
+    Flux.testmode!(m.g, false)
+
+    # Forward
     x_gen = rand(m.g)
-    x_gen_detached = x_gen |> Flux.data
-    # Forward projector loss
-    fx_gen, fx_data = m.f(x_gen_detached), m.f(x_data)
-    ratio = estimate_ratio(fx_gen, fx_data; σs=m.σs)
+    fx_gen, fx_data = m.f(x_gen), m.f(x_data)
+    ratio, mmd = RMMMDNets.estimate_ratio_compute_mmd(fx_gen, fx_data; σs=m.σs)
     ratio_minus1sq_mean = mean((ratio .- 1) .^ 2)
     raito_mean = mean(ratio)
-    loss_f = -(ratio_minus1sq_mean + raito_mean)
-    gs_f = Tracker.gradient(() -> loss_f, m.ps_f)   # NOTE: compute the gradient but no update
+    loss_f_multiplier = 1e-2
+    loss_f = loss_f_multiplier * -(ratio_minus1sq_mean + raito_mean)
+    loss_g = mmd
 
-    # Train g
-    Flux.testmode!(m.f, true)
-    Flux.testmode!(m.g, false)
-    # Forward generator loss
-    fx_gen, fx_data = m.f(x_gen), m.f(x_data)       # NOTE: this `f` is the old one
-    loss_g = compute_mmd(fx_gen, fx_data; σs=m.σs)
+    # Collect gradients
+    zero_grad!.(grad.(m.ps_g))
+    zero_grad!.(grad.(m.ps_f))
+    gs_f = Tracker.gradient(() -> loss_f, m.ps_f; once=false)
+
+    zero_grad!.(grad.(m.ps_g))
+    zero_grad!.(grad.(m.ps_f))
     gs_g = Tracker.gradient(() -> loss_g, m.ps_g)
     
-    # Update both f and g
+    # Update f and g
     Tracker.update!(m.opt, m.ps_f, gs_f)
     Tracker.update!(m.opt, m.ps_g, gs_g)
-
-    # Flux.testmode!(m, false)
-    # x_gen = rand(m.g)
-    # fx_gen, fx_data = m.f(x_gen), m.f(x_data)
-    # ratio, mmd = estimate_ratio_compute_mmd(fx_gen, fx_data; σs=m.σs)
-    # ratio_minus1sq_mean = mean((ratio .- 1) .^ 2)
-    # raito_mean = mean(ratio)
-    # loss_f, loss_g = -(ratio_minus1sq_mean + raito_mean), mmd
-    # update_by_loss!(loss_f + loss_g, Flux.Params([m.ps_f..., m.ps_g...]), m.opt)
 
     return (
         ratio_minus1sq_mean=ratio_minus1sq_mean,
         raito_mean=raito_mean,
-        loss_f=loss_f, loss_g=loss_g, 
+        loss_f_multiplier=loss_f_multiplier,
+        loss_f=loss_f,
+        loss_g=loss_g, 
         batch_size=last(size(x_data)), 
         batch_size_gen=last(size(x_gen)),
         lr=m.opt.eta,
     )
 end
 
-vis(d::Data, m::RMMMDNet) = vis(d, m.g)
+function evaluate(d::Data, m::RMMMDNet)
+    fig_g = plt.figure(figsize=(3.5, 3.5))
+    plot!(d, m.g)
+    if m.f.D_fx != 2    # only visualise projector if D_fx is 2
+        return (gen=fig_g,)
+    end
+    fig_f = plt.figure(figsize=(3.5, 3.5))
+    plot!(d, m.g, m.f)
+    return (gen=fig_g, proj=fig_f)
+end
