@@ -57,16 +57,22 @@ function multi_run(f_run, x_de, x_nu, σs, verbose)
         σs = [σ]
     end
 
-    return mapreduce(σ -> f_run(pdot_dede, pdot_denu, pdot_nunu, σ), (x, y) -> x .+ y, σs)
+    return mapreduce(
+        σ -> f_run(pdot_dede, pdot_denu, pdot_nunu, σ), 
+        (x, y) -> x .+ y, 
+        σs
+    )
 end
 
 ###
 
 abstract type AbstractGenerativeModel end
 
-function update_by_loss!(loss, ps, opt)
+function update_by_loss!(loss, ps, opt; n=1)
     gs = Tracker.gradient(() -> loss, ps)
-    Tracker.update!(opt, ps, gs)
+    for i in 1:n
+        Tracker.update!(opt, ps, gs)
+    end
 end
 
 function train!(m::AbstractGenerativeModel, n_epochs::Int, dl::DataLoader)
@@ -128,39 +134,46 @@ struct RMMMDNet <: AbstractGenerativeModel
     σs
 end
 
-Flux.mapchildren(f, m::RMMMDNet) = RMMMDNet(m.iter, m.logger, f(m.g), m.ps_g, f(m.f), m.ps_f, m.opt, m.σs)
+function Flux.mapchildren(f, m::RMMMDNet)
+    return RMMMDNet(m.iter, m.logger, f(m.g), m.ps_g, f(m.f), m.ps_f, m.opt, m.σs)
+end
 Flux.children(m::RMMMDNet) = (m.iter, m.logger, m.g, m.ps_g, m.f, m.ps_f, m.opt, m.σs)
 
 function step!(m::RMMMDNet, x_data)
-    # # Train f
-    # Flux.testmode!(m.f, false)
-    # Flux.testmode!(m.g, true)
-    # # Sample from generator
-    # x_gen = rand(m.g)
-    # # Step projector
-    # fx_gen, fx_data = m.f(x_gen), m.f(x_data)
-    # ratio = estimate_ratio(fx_gen, fx_data; σs=m.σs)
-    # loss_f = -mean(ratio)
-    # update_by_loss!(loss_f, m.ps_f, m.opt)
-
-    # # Train g
-    # Flux.testmode!(m.f, true)
-    # Flux.testmode!(m.g, false)
-    # # Sample from generator
-    # x_gen = rand(m.g)
-    # # Step generator
-    # fx_gen, fx_data = m.f(x_gen), m.f(x_data)
-    # loss_g = compute_mmd(fx_gen, fx_data; σs=m.σs)
-    # update_by_loss!(loss_g, m.ps_g, m.opt)
-
-    Flux.testmode!(m, false)
+    # Train f
+    Flux.testmode!(m.f, false)
+    Flux.testmode!(m.g, true)
+    # Sample from generator
     x_gen = rand(m.g)
-    fx_gen, fx_data = m.f(x_gen), m.f(x_data)
-    ratio, mmd = estimate_ratio_compute_mmd(fx_gen, fx_data; σs=m.σs)
+    x_gen_detached = x_gen |> Flux.data
+    # Forward projector loss
+    fx_gen, fx_data = m.f(x_gen_detached), m.f(x_data)
+    ratio = estimate_ratio(fx_gen, fx_data; σs=m.σs)
     ratio_minus1sq_mean = mean((ratio .- 1) .^ 2)
     raito_mean = mean(ratio)
-    loss_f, loss_g = -(ratio_minus1sq_mean + raito_mean), mmd
-    update_by_loss!(loss_f + loss_g, Flux.Params([m.ps_f..., m.ps_g...]), m.opt)
+    loss_f = -(ratio_minus1sq_mean + raito_mean)
+    gs_f = Tracker.gradient(() -> loss_f, m.ps_f)   # NOTE: compute the gradient but no update
+
+    # Train g
+    Flux.testmode!(m.f, true)
+    Flux.testmode!(m.g, false)
+    # Forward generator loss
+    fx_gen, fx_data = m.f(x_gen), m.f(x_data)       # NOTE: this `f` is the old one
+    loss_g = compute_mmd(fx_gen, fx_data; σs=m.σs)
+    gs_g = Tracker.gradient(() -> loss_g, m.ps_g)
+    
+    # Update both f and g
+    Tracker.update!(m.opt, m.ps_f, gs_f)
+    Tracker.update!(m.opt, m.ps_g, gs_g)
+
+    # Flux.testmode!(m, false)
+    # x_gen = rand(m.g)
+    # fx_gen, fx_data = m.f(x_gen), m.f(x_data)
+    # ratio, mmd = estimate_ratio_compute_mmd(fx_gen, fx_data; σs=m.σs)
+    # ratio_minus1sq_mean = mean((ratio .- 1) .^ 2)
+    # raito_mean = mean(ratio)
+    # loss_f, loss_g = -(ratio_minus1sq_mean + raito_mean), mmd
+    # update_by_loss!(loss_f + loss_g, Flux.Params([m.ps_f..., m.ps_g...]), m.opt)
 
     return (
         ratio_minus1sq_mean=ratio_minus1sq_mean,

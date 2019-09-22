@@ -44,7 +44,7 @@ function get_args(
     end
     
     if dataset == "ring"
-        args_dict[:n_epochs] = 200
+        args_dict[:n_epochs] = 10_000
         args_dict[:lr] = 1f-3
         args_dict[:base] = "gaussian"
         args_dict[:D_z] = 256
@@ -61,8 +61,8 @@ function get_args(
     if dataset == "mnist"
         args_dict[:n_epochs] = 10
         args_dict[:base] = "uniform"
-        args_dict[:D_z] = 100
-        args_dict[:Dg_h] = "200,400,800"
+        args_dict[:D_z] = 400
+        args_dict[:Dg_h] = "600,600,800"
         args_dict[:σ] = "relu"
         args_dict[:σ_last] = "sigmoid"
         if model_name == "mmdnet"
@@ -71,8 +71,8 @@ function get_args(
         elseif model_name == "rmmmdnet"
             args_dict[:lr] = 1f-4
             args_dict[:σs] = "1,2,4,8,16"
-            args_dict[:Df_h] = "400,200,100"
-            args_dict[:D_fx] = 10
+            args_dict[:Df_h] = "400,200"
+            args_dict[:D_fx] = 100
         end
     end
     
@@ -82,7 +82,7 @@ function get_args(
     end
     
     # Show arguments
-    @info "On dataset $dataset with args" args_dict...
+    @info "Args" args_dict...
 
     # Generate experiment name from dict
     exclude = [

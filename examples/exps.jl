@@ -14,8 +14,8 @@ rmmmdnets_path = pathof(RMMMDNets) |> splitdir |> first |> splitdir |> first
 include("$rmmmdnets_path/scripting.jl")
 
 # dataset = "gaussian"
-dataset = "ring"
-# dataset = "mnist"
+#  dataset = "ring"
+dataset = "mnist"
 
 # model_name = "mmdnet"
 model_name = "rmmmdnet"
@@ -25,7 +25,7 @@ args_list = [get_args(
     model_name; 
     override=Dict(:seed => seed), 
     suffix="seed=$seed"
-) for seed in [1, 2, 3, 4]]
+) for seed in 1:4]
 
 ###
 
