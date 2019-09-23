@@ -128,21 +128,24 @@ function step!(m::GAN, x_data)
     
     # Update d
     x_gen = rand(m.g)
-    logitŷ = m.d(hcat(x_data, x_gen))
+    logitŷ_d = m.d(hcat(x_data, x_gen))
     batch_size, batch_size_gen = last(size(x_data)), last(size(x_gen))
     y_real, y_fake = ones(1, batch_size), zeros(1, batch_size_gen)
-    loss_d = mean(Flux.logitbinarycrossentropy.(logitŷ, hcat(y_real, y_fake)))
+    y_d = hcat(y_real, y_fake)
+    loss_d = mean(Flux.logitbinarycrossentropy.(logitŷ_d, y_d))
     update_by_loss!(loss_d, m.ps_d, m.opt)
 
     # Update g
     x_gen = rand(m.g)
-    logitŷ = m.d(x_gen)
-    loss_g = mean(Flux.logitbinarycrossentropy.(logitŷ, y_real))
+    logitŷ_g = m.d(x_gen)
+    y_g = y_real
+    loss_g = mean(Flux.logitbinarycrossentropy.(logitŷ_g, y_g))
     update_by_loss!(loss_g, m.ps_g, m.opt)
 
     return (
         loss_d=loss_d,
         loss_g=loss_g, 
+        accuracy=mean(float(Flux.data(logitŷ_d) .> 0) .== y_d),
         batch_size=batch_size, 
         batch_size_gen=batch_size_gen,
         lr=m.opt.eta,

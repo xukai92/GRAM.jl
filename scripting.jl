@@ -53,7 +53,7 @@ function get_args(
     end
     
     if dataset == "ring"
-        args_dict[:n_epochs] = 10_000
+        args_dict[:n_epochs] = 1_000
         
         args_dict[:base] = "gaussian"
         args_dict[:D_z] = 256

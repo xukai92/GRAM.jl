@@ -13,8 +13,8 @@ end
 RMMMDNets_PATH = pathof(RMMMDNets) |> splitdir |> first |> splitdir |> first
 include("$RMMMDNets_PATH/scripting.jl")
 
-dataset = "gaussian"
-#  dataset = "ring"
+# dataset = "gaussian"
+ dataset = "ring"
 # dataset = "mnist"
 
 model_name = "gan"
@@ -24,7 +24,7 @@ model_name = "gan"
 args_list = [get_args(
     dataset, 
     model_name; 
-    override=(seed=seed, n_epochs=1_000), 
+    override=(seed=seed, n_epochs=1_000, D_z=20), 
     suffix="seed=$seed"
 ) for seed in 1:4]
 
