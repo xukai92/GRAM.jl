@@ -21,7 +21,7 @@ export Data, DataLoader
 include("modules.jl")
 export Generator, Projector
 include("models.jl")
-export MMDNet, RMMMDNet, train!
+export GAN, MMDNet, RMMMDNet, train!, evaluate
 
 ###
 
@@ -96,7 +96,10 @@ function get_model(args::NamedTuple, data::Data)
         base = GaussianBase(args.D_z)
     end
     g = Generator(base, args.D_z, args.Dg_h, data.dim, args.σ, args.σ_last, args.batch_size_gen)
-    if args.model_name == "mmdnet"
+    if args.model_name == "gan"
+        d = Discriminator(data.dim, args.Dd_h, args.σ)
+        m = GAN(Ref(0), logger, g, Flux.params(g), d, Flux.params(d), opt)
+    elseif args.model_name == "mmdnet"
         m = MMDNet(Ref(0), logger, g, Flux.params(g), opt, args.σs)
     elseif args.model_name == "rmmmdnet"
         f = Projector(data.dim, args.Df_h, args.D_fx, args.σ)
@@ -107,6 +110,6 @@ function get_model(args::NamedTuple, data::Data)
     return m
 end
 
-export get_data, evaluate, get_model
+export get_data, get_model
 
 end # module

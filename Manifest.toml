@@ -174,10 +174,12 @@ uuid = "a8cc5b0e-0ffa-5ad4-8c14-923d3ee1735f"
 version = "4.0.0"
 
 [[CuArrays]]
-deps = ["AbstractFFTs", "Adapt", "CUDAapi", "CUDAdrv", "CUDAnative", "GPUArrays", "LinearAlgebra", "MacroTools", "NNlib", "Printf", "Random", "Requires", "SparseArrays", "TimerOutputs"]
-git-tree-sha1 = "46b48742a84bb839e74215b7e468a4a1c6ba30f9"
+deps = ["AbstractFFTs", "Adapt", "CEnum", "CUDAapi", "CUDAdrv", "CUDAnative", "DataStructures", "GPUArrays", "LinearAlgebra", "MacroTools", "NNlib", "Printf", "Random", "Requires", "SparseArrays", "TimerOutputs"]
+git-tree-sha1 = "6a7dd33876eac381397907465cbc0bf755c1468b"
+repo-rev = "master"
+repo-url = "https://github.com/JuliaGPU/CuArrays.jl.git"
 uuid = "3a865a2d-5b23-5a0f-bc46-62713ec82fae"
-version = "1.2.1"
+version = "1.3.0"
 
 [[CustomUnitRanges]]
 deps = ["Test"]
@@ -491,7 +493,9 @@ version = "0.5.1"
 
 [[MLToolkit]]
 deps = ["ArgParse", "CodecZlib", "CuArrays", "Distances", "Distributed", "Distributions", "Flux", "GSL", "Images", "Ipopt", "JuMP", "LinearAlgebra", "Logging", "Pkg", "PyCall", "PyPlot", "Random", "Reexport", "Requires", "SpecialFunctions", "Statistics", "StatsBase", "StatsFuns", "TensorBoardLogger", "Test", "Tracker"]
-path = "/afs/inf.ed.ac.uk/user/s16/s1672897/projects/MLToolkit.jl/"
+git-tree-sha1 = "a6cbe221789ad1ce160a0d91a965f16e085b728d"
+repo-rev = "master"
+repo-url = "git@github.com:xukai92/MLToolkit.jl.git"
 uuid = "519e820e-097c-11e9-2274-1b004aeb0b9b"
 version = "0.3.0"
 

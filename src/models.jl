@@ -15,7 +15,9 @@ end
 
 function _estimate_ratio(Kdede, Kdenu)
     n_de, n_nu = size(Kdenu)
-    Kdede_stable = Kdede + diagm(0 => fill(1f-3 * one(Float32), size(Kdede, 1)))
+    eps = diagm(0 => fill(1f-3 * one(Float32), size(Kdede, 1)))
+    eps = use_gpu.x ? gpu(eps) : eps
+    Kdede_stable = Kdede + eps
     return convert(Float32, n_de / n_nu) * (Kdede_stable \ sum(Kdenu; dims=2)[:,1])
 end
 
@@ -104,6 +106,55 @@ function train!(m::AbstractGenerativeModel, n_epochs::Int, dl::DataLoader)
     end
 end
 
+# GAN
+
+struct GAN <: AbstractGenerativeModel
+    iter::Base.RefValue{Int}
+    logger::AbstractLogger
+    g::Generator
+    ps_g
+    d::Discriminator
+    ps_d
+    opt
+end
+
+Flux.mapchildren(f, m::GAN) = GAN(m.iter, m.logger, f(m.g), m.ps_g, f(m.d), m.ps_d, m.opt)
+Flux.children(m::GAN) = (m.iter, m.logger, m.g, m.ps_g, m.d, m.ps_d, m.opt)
+
+function step!(m::GAN, x_data)
+    # Training mode
+    Flux.testmode!(m.d, false)
+    Flux.testmode!(m.g, false)
+    
+    # Update d
+    x_gen = rand(m.g)
+    logitŷ = m.d(hcat(x_data, x_gen))
+    batch_size, batch_size_gen = last(size(x_data)), last(size(x_gen))
+    y_real, y_fake = ones(1, batch_size), zeros(1, batch_size_gen)
+    loss_d = mean(Flux.logitbinarycrossentropy.(logitŷ, hcat(y_real, y_fake)))
+    update_by_loss!(loss_d, m.ps_d, m.opt)
+
+    # Update g
+    x_gen = rand(m.g)
+    logitŷ = m.d(x_gen)
+    loss_g = mean(Flux.logitbinarycrossentropy.(logitŷ, y_real))
+    update_by_loss!(loss_g, m.ps_g, m.opt)
+
+    return (
+        loss_d=loss_d,
+        loss_g=loss_g, 
+        batch_size=batch_size, 
+        batch_size_gen=batch_size_gen,
+        lr=m.opt.eta,
+    )
+end
+
+function evaluate(d::Data, m::GAN)
+    fig = plt.figure(figsize=(3.5, 3.5))
+    plot!(d, m.g)
+    return (gen=fig,)
+end
+
 # MMDNet
 
 struct MMDNet <: AbstractGenerativeModel
@@ -119,7 +170,10 @@ Flux.mapchildren(f, m::MMDNet) = MMDNet(m.iter, m.logger, f(m.g), m.ps_g, m.opt,
 Flux.children(m::MMDNet) = (m.iter, m.logger, m.g, m.ps_g, m.opt, m.σs)
 
 function step!(m::MMDNet, x_data)
+    # Training mode
     Flux.testmode!(m, false)
+
+    # Forward
     x_gen = rand(m.g)
     loss_g = compute_mmd(x_gen, x_data; σs=m.σs)
     update_by_loss!(loss_g, m.ps_g, m.opt)
@@ -165,10 +219,10 @@ function step!(m::RMMMDNet, x_data)
     x_gen = rand(m.g)
     fx_gen, fx_data = m.f(x_gen), m.f(x_data)
     ratio, mmd = RMMMDNets.estimate_ratio_compute_mmd(fx_gen, fx_data; σs=m.σs)
-    ratio_minus1sq_mean = mean((ratio .- 1) .^ 2)
+    pearson_divergence = mean((ratio .- 1) .^ 2)
     raito_mean = mean(ratio)
     loss_f_multiplier = 1e-2
-    loss_f = loss_f_multiplier * -(ratio_minus1sq_mean + raito_mean)
+    loss_f = loss_f_multiplier * -(pearson_divergence + raito_mean)
     loss_g = mmd
 
     # Collect gradients
@@ -185,10 +239,11 @@ function step!(m::RMMMDNet, x_data)
     Tracker.update!(m.opt, m.ps_g, gs_g)
 
     return (
-        ratio_minus1sq_mean=ratio_minus1sq_mean,
+        pearson_divergence=pearson_divergence,
         raito_mean=raito_mean,
         loss_f_multiplier=loss_f_multiplier,
         loss_f=loss_f,
+        mmd=mmd,
         loss_g=loss_g, 
         batch_size=last(size(x_data)), 
         batch_size_gen=last(size(x_gen)),

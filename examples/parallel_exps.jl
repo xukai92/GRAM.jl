@@ -10,20 +10,21 @@ end
 
 ###
 
-rmmmdnets_path = pathof(RMMMDNets) |> splitdir |> first |> splitdir |> first
-include("$rmmmdnets_path/scripting.jl")
+RMMMDNets_PATH = pathof(RMMMDNets) |> splitdir |> first |> splitdir |> first
+include("$RMMMDNets_PATH/scripting.jl")
 
-# dataset = "gaussian"
- dataset = "ring"
+dataset = "gaussian"
+#  dataset = "ring"
 # dataset = "mnist"
 
+model_name = "gan"
 # model_name = "mmdnet"
-model_name = "rmmmdnet"
+# model_name = "rmmmdnet"
 
 args_list = [get_args(
     dataset, 
     model_name; 
-    override=Dict(:seed => seed), 
+    override=(seed=seed, n_epochs=1_000), 
     suffix="seed=$seed"
 ) for seed in 1:4]
 
