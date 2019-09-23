@@ -127,6 +127,8 @@ function step!(m::GAN, x_data)
     Flux.testmode!(m.g, false)
     
     # Update d
+    zero_grad!.(grad.(m.ps_g))
+    zero_grad!.(grad.(m.ps_d))
     x_gen = rand(m.g)
     logitŷ_d = m.d(hcat(x_data, x_gen))
     batch_size, batch_size_gen = last(size(x_data)), last(size(x_gen))
@@ -136,6 +138,8 @@ function step!(m::GAN, x_data)
     update_by_loss!(loss_d, m.ps_d, m.opt)
 
     # Update g
+    zero_grad!.(grad.(m.ps_g))
+    zero_grad!.(grad.(m.ps_d))
     x_gen = rand(m.g)
     logitŷ_g = m.d(x_gen)
     y_g = y_real
@@ -145,10 +149,7 @@ function step!(m::GAN, x_data)
     return (
         loss_d=loss_d,
         loss_g=loss_g, 
-        accuracy=mean(float(Flux.data(logitŷ_d) .> 0) .== y_d),
-        batch_size=batch_size, 
-        batch_size_gen=batch_size_gen,
-        lr=m.opt.eta,
+        accuracy=mean(float.(Flux.data(logitŷ_d) .> 0) .== y_d),
     )
 end
 
@@ -181,12 +182,7 @@ function step!(m::MMDNet, x_data)
     loss_g = compute_mmd(x_gen, x_data; σs=m.σs)
     update_by_loss!(loss_g, m.ps_g, m.opt)
 
-    return (
-        loss_g=loss_g, 
-        batch_size=last(size(x_data)), 
-        batch_size_gen=last(size(x_gen)),
-        lr=m.opt.eta,
-    )
+    return (loss_g=loss_g,)
 end
 
 function evaluate(d::Data, m::MMDNet)
@@ -247,10 +243,7 @@ function step!(m::RMMMDNet, x_data)
         loss_f_multiplier=loss_f_multiplier,
         loss_f=loss_f,
         mmd=mmd,
-        loss_g=loss_g, 
-        batch_size=last(size(x_data)), 
-        batch_size_gen=last(size(x_gen)),
-        lr=m.opt.eta,
+        loss_g=loss_g,
     )
 end
 

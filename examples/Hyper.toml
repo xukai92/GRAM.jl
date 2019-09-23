@@ -1,0 +1,85 @@
+[common]
+seed = 1
+batch_size = 200
+batch_size_gen = 200
+
+[gaussian]
+  n_epochs = 100
+  base = "uniform"
+  D_z = 10
+  Dg_h = "50,50"
+  act = "tanh"
+  act_last = "identity"
+
+  [gaussian.gan]
+    opt = "adam"
+    lr = 1e-4
+    beta1 = 5e-1
+    Dd_h = "50,25"
+
+  [gaussian.mmdnet]
+    opt = "rmsprop"
+    lr = 1e-3
+    sigma = "1,2"
+
+  [gaussian.rmmmdnet]
+    opt = "adam"
+    lr = 1e-3
+    beta1 = 5e-1
+    sigma = "1,2"
+    Df_h = "50,25"
+    D_fx = 5
+
+[ring]
+  n_epochs = 1_000
+  base = "gaussian"
+  D_z = 20
+  Dg_h = "100,100"
+  act = "relu"
+  act_last = "identity"
+
+  [ring.gan]
+    opt = "adam"
+    lr = 1e-4
+    beta1 = 5e-1
+    Dd_h = "100,100"
+
+  [ring.mmdnet]
+    opt = "rmsprop"
+    lr = 1e-3
+    sigma = "1"
+
+  [ring.rmmmdnet]
+    opt = "adam"
+    lr = 1e-3
+    beta1 = 5e-1
+    sigma = "1"
+    Df_h = "100,100"
+    D_fx = 10
+
+[mnist]
+  n_epochs = 10
+  base = "uniform"
+  D_z = 400
+  Dg_h = "600,600,800"
+  act = "relu"
+  act_last = "sigmoid"
+
+  [mnist.gan]
+    opt = "adam"
+    lr = 1e-4
+    beta1 = 5e-1
+    Dd_h = "400,200"
+
+  [mnist.mmdnet]
+    opt = "rmsprop"
+    lr = 1e-3
+    sigma = "1,5,10"
+
+  [mnist.rmmmdnet]
+    opt = "adam"
+    lr = 1e-3
+    beta1 = 5e-1
+    sigma = "1,2,4,8,16"
+    Df_h = "400,200"
+    D_fx = 100

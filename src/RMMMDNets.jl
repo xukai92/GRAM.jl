@@ -10,11 +10,66 @@ using Logging, TensorBoardLogger, Humanize, Dates
 using Flux, Flux.Data.MNIST, Tracker
 using ProgressMeter: @showprogress
 using Random: shuffle, MersenneTwister, AbstractRNG, GLOBAL_RNG
-using MLToolkit: DATETIME_FMT, @tb, istb, plt, plot_grayimg!, autoset_lim!, nparams
+using MLToolkit: DATETIME_FMT, @tb, istb, plt, plot_grayimg!, autoset_lim!, nparams, flatten_dict, dict2namedtuple
 
-# @enum Model mmdnet rmmdnet
-# @enum Dataset gaussian ring mnist
-# export mmdnet, rmmmdnet, gaussian, ring, mnist
+###
+
+function parse_toml(toml, dataset, model_name)
+    # Extract from TOML dict
+    args_dict_str = merge(toml["common"], filter(p -> !(p.second isa Dict), toml[dataset]), toml[dataset][model_name])
+    # Convert keys to Symbol
+    args_dict = Dict(Symbol(p.first) => p.second for p in args_dict_str)
+    # Add dataset and model_name
+    args_dict[:dataset] = dataset
+    args_dict[:model_name] = model_name
+    return args_dict
+end
+
+function parse_args_dict(_args_dict; override::NamedTuple=NamedTuple(), suffix::String="")
+    # Imutability
+    args_dict = copy(_args_dict)
+    # Oeverride
+    for k in keys(override)
+        args_dict[k] = override[k]
+    end
+    # Show arguments
+    @info "Args" args_dict...
+    # Generate experiment name from dict
+    exclude = [
+        :seed,
+        :dataset,
+        :model_name,
+        :n_epochs,
+        :act_last,
+    ]
+    exp_name = flatten_dict(args_dict; exclude=exclude)
+    exp_name *= "-seed=$(args_dict[:seed])" # always put seed in the end
+    if !isnothing(suffix) && suffix != ""
+        exp_name *= "-$suffix"
+    end
+    # Add exp_name to args_dict
+    args_dict[:exp_name] = exp_name
+    # Parse "1,2,3" => [1,2,3]
+    parse_csv(T, l) = map(x -> parse(T, x), split(l, ","))
+    if :sigma in keys(args_dict)
+        args_dict[:sigma] = if args_dict[:sigma] == "median"; []
+        else parse_csv(Float32, args_dict[:sigma]) end
+    end
+    args_dict[:Dg_h] = parse_csv(Int, args_dict[:Dg_h])
+    if :Dd_h in keys(args_dict)
+        args_dict[:Dd_h] = parse_csv(Int, args_dict[:Dd_h])
+    end
+    if :Df_h in keys(args_dict)
+        args_dict[:Df_h] = parse_csv(Int, args_dict[:Df_h])
+    end
+    # Convert dict to named tuple
+    args = dict2namedtuple(args_dict)
+    return args
+end
+
+export parse_toml, parse_args_dict
+
+###
 
 include("data.jl")
 export Data, DataLoader
@@ -83,10 +138,8 @@ function get_model(args::NamedTuple, data::Data)
     module_path = pathof(@__MODULE__) |> splitdir |> first |> splitdir |> first
     logdir = "$(data.dataset)/$(args.model_name)/$(args.exp_name)/$(Dates.format(now(), DATETIME_FMT))"
     logger = TBLogger("$module_path/logs/$logdir")
-    if args.opt == "adam_akash" # Akash's secrete setting
-        opt = ADAM(args.lr, (5f-1, 999f-4))
-    elseif args.opt == "adam"
-        opt = ADAM(args.lr)
+    if args.opt == "adam"
+        opt = ADAM(args.lr, (args.beta1, 999f-4))
     elseif args.opt == "rmsprop"
         opt = RMSProp(args.lr)
     end
@@ -95,15 +148,15 @@ function get_model(args::NamedTuple, data::Data)
     elseif args.base == "gaussian"
         base = GaussianBase(args.D_z)
     end
-    g = Generator(base, args.D_z, args.Dg_h, data.dim, args.σ, args.σ_last, args.batch_size_gen)
+    g = Generator(base, args.D_z, args.Dg_h, data.dim, args.act, args.act_last, args.batch_size_gen)
     if args.model_name == "gan"
-        d = Discriminator(data.dim, args.Dd_h, args.σ)
+        d = Discriminator(data.dim, args.Dd_h, args.act)
         m = GAN(Ref(0), logger, g, Flux.params(g), d, Flux.params(d), opt)
     elseif args.model_name == "mmdnet"
-        m = MMDNet(Ref(0), logger, g, Flux.params(g), opt, args.σs)
+        m = MMDNet(Ref(0), logger, g, Flux.params(g), opt, args.sigma)
     elseif args.model_name == "rmmmdnet"
-        f = Projector(data.dim, args.Df_h, args.D_fx, args.σ)
-        m = RMMMDNet(Ref(0), logger, g, Flux.params(g), f, Flux.params(f), opt, args.σs)
+        f = Projector(data.dim, args.Df_h, args.D_fx, args.act)
+        m = RMMMDNet(Ref(0), logger, g, Flux.params(g), f, Flux.params(f), opt, args.sigma)
     end
     @info "Init $(args.model_name) with $(nparams(m) |> Humanize.digitsep) parameters" logdir
     m = use_gpu.x ? gpu(m) : m

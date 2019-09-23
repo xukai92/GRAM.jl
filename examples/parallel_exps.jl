@@ -1,7 +1,7 @@
 using Distributed
 addprocs(4)
 
-using MLToolkit: flatten_dict, dict2namedtuple
+using Pkg.TOML
 
 @everywhere begin 
     using Random: seed!
@@ -10,23 +10,24 @@ end
 
 ###
 
-RMMMDNets_PATH = pathof(RMMMDNets) |> splitdir |> first |> splitdir |> first
-include("$RMMMDNets_PATH/scripting.jl")
-
 # dataset = "gaussian"
- dataset = "ring"
+dataset = "ring"
 # dataset = "mnist"
 
 model_name = "gan"
 # model_name = "mmdnet"
 # model_name = "rmmmdnet"
 
-args_list = [get_args(
-    dataset, 
-    model_name; 
-    override=(seed=seed, n_epochs=1_000, D_z=20), 
-    suffix="seed=$seed"
-) for seed in 1:4]
+rmmmdnets_path = pathof(RMMMDNets) |> splitdir |> first |> splitdir |> first
+hyper = TOML.parsefile("$rmmmdnets_path/examples/Hyper.toml")
+
+args_dict = parse_toml(hyper, dataset, model_name)
+
+args_list = [parse_args_dict(
+    args_dict;
+    override=(D_z=D_z,),
+    suffix="test_toml"
+) for D_z in [2, 4, 8, 16]]
 
 ###
 
@@ -42,6 +43,8 @@ args_list = [get_args(
     dataloader = DataLoader(data, args.batch_size)
     
     train!(model, args.n_epochs, dataloader)
+
+    return data, model
 end
 
 @sync @distributed for args in args_list
