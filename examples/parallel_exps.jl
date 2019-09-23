@@ -4,47 +4,58 @@ addprocs(4)
 using Pkg.TOML
 
 @everywhere begin 
-    using Random: seed!
-    using RMMMDNets
+
+using Random: seed!
+using RMMMDNets
+
 end
 
 ###
 
-# dataset = "gaussian"
-dataset = "ring"
-# dataset = "mnist"
-
-model_name = "gan"
-# model_name = "mmdnet"
-# model_name = "rmmmdnet"
-
 rmmmdnets_path = pathof(RMMMDNets) |> splitdir |> first |> splitdir |> first
 hyper = TOML.parsefile("$rmmmdnets_path/examples/Hyper.toml")
 
-args_dict = parse_toml(hyper, dataset, model_name)
-
-args_list = [parse_args_dict(
-    args_dict;
-    override=(D_z=D_z,),
-    suffix="test_toml"
-) for D_z in [2, 4, 8, 16]]
+args_list = []
+for dataset in [
+    "gaussian",
+    # "ring",
+    # "mnist",
+], model_name in [
+    "gan", 
+    "mmdnet", 
+    "rmmmdnet",
+], D_z in [2, 4, 8, 16]
+    args_dict = parse_toml(hyper, dataset, model_name)
+    args = parse_args_dict(
+        args_dict; 
+        override=(D_z=D_z,), 
+        suffix=""
+    )
+    push!(args_list, args)
+end
 
 ###
 
-@everywhere function run_exp(args)
-    data = get_data(args.dataset)
-    
+@everywhere begin
+
+data = get_data(args.dataset)
+
+function run_exp(args)
     seed!(args.seed)
 
     model = get_model(args, data)
-
     evaluate(data, model)
 
     dataloader = DataLoader(data, args.batch_size)
     
     train!(model, args.n_epochs, dataloader)
+    evaluate(data, model)
 
-    return data, model
+    model_fname = save!(model)
+
+    return model, model_fname
+end
+
 end
 
 @sync @distributed for args in args_list

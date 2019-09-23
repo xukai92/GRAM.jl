@@ -4,7 +4,7 @@ batch_size = 200
 batch_size_gen = 200
 
 [gaussian]
-  n_epochs = 100
+  n_epochs = 200
   base = "uniform"
   D_z = 10
   Dg_h = "50,50"
@@ -31,7 +31,7 @@ batch_size_gen = 200
     D_fx = 5
 
 [ring]
-  n_epochs = 1_000
+  n_epochs = 2_000
   base = "gaussian"
   D_z = 20
   Dg_h = "100,100"
@@ -58,7 +58,7 @@ batch_size_gen = 200
     D_fx = 10
 
 [mnist]
-  n_epochs = 10
+  n_epochs = 20
   base = "uniform"
   D_z = 400
   Dg_h = "600,600,800"

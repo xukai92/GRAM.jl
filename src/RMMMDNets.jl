@@ -165,4 +165,29 @@ end
 
 export get_data, get_model
 
+###
+
+using BSON
+
+function save!(model::AbstractGenerativeModel)
+    model_cpu = model |> RMMMDNets.Flux.cpu
+    model_fname = "$(model.logger.logdir)/model.bson"
+    iter = model.iter
+    weights = Tracker.data.(Flux.params(model))
+    bson(model_fname, Dict(:iter => model.iter, :weights => weights))
+    @info "Saved model at $(iter.x) iterations to $model_fname"
+    return model_fname
+end
+
+function load!(model::AbstractGenerativeModel, model_fname::String)
+    model_loaded = BSON.load(model_fname)
+    weights = model_loaded[:weights]
+    Flux.loadparams!(model, weights)
+    iter = model_loaded[:iter]
+    model.iter.x = iter.x
+    @info "Loaded model at $(iter.x) iterations from $model_fname"
+end
+
+export save!, load!
+
 end # module
