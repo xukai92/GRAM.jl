@@ -10,6 +10,7 @@ batch_size_gen = 200
   Dg_h = "50,50"
   act = "tanh"
   act_last = "identity"
+  norm = false
 
   [gaussian.gan]
     opt = "adam"
@@ -37,6 +38,7 @@ batch_size_gen = 200
   Dg_h = "100,100"
   act = "relu"
   act_last = "identity"
+  norm = false
 
   [ring.gan]
     opt = "adam"
@@ -60,10 +62,11 @@ batch_size_gen = 200
 [mnist]
   n_epochs = 20
   base = "uniform"
-  D_z = 400
+  D_z = 100
   Dg_h = "600,600,800"
   act = "relu"
   act_last = "sigmoid"
+  norm = true
 
   [mnist.gan]
     opt = "adam"
@@ -80,6 +83,6 @@ batch_size_gen = 200
     opt = "adam"
     lr = 1e-3
     beta1 = 5e-1
-    sigma = "1,2,4,8,16"
+    sigma = "1,5,10"
     Df_h = "400,200"
     D_fx = 100

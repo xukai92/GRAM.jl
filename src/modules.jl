@@ -3,19 +3,19 @@
 parse_op(op::String) = eval(Symbol(op))
 parse_op(op)= op
 
-function build_dense_with_norm(D_in, D_out, σ, with_norm::Bool=false)
-    return if with_norm
+function build_dense_with_norm(D_in, D_out, σ, norm::Bool=false)
+    return if norm
         Chain(Dense(D_in, D_out), BatchNorm(D_out, σ))
     else
         Dense(D_in, D_out, σ)
     end
 end
 
-function build_mlp_chain(D_in, D_h, D_out, σ, σ_last; with_norm::Bool=false)
+function build_mlp_chain(D_in, D_h, D_out, σ, σ_last; norm::Bool=false)
     n_layers = length(D_h)
     return Chain(
-        build_dense_with_norm(D_in, D_h[1], σ, with_norm),
-        [build_dense_with_norm(D_h[i], D_h[i+1], σ, with_norm) for i in 1:n_layers-1]...,
+        build_dense_with_norm(D_in, D_h[1], σ, norm),
+        [build_dense_with_norm(D_h[i], D_h[i+1], σ, norm) for i in 1:n_layers-1]...,
         Dense(D_h[n_layers], D_out, σ_last)
     )
 end
@@ -60,10 +60,10 @@ end
 
 Flux.@treelike(Generator)
 
-function Generator(base::AbstractBaseGenerator, D_z::Int, D_h::AbstractVector{Int}, D_x::Int, σ, σ_last, n_default::Int)
+function Generator(base::AbstractBaseGenerator, D_z::Int, D_h::AbstractVector{Int}, D_x::Int, σ, σ_last, norm, n_default::Int)
     @assert base.D_z == D_z
     σ, σ_last = parse_op(σ), parse_op(σ_last)
-    f = build_mlp_chain(D_z, D_h, D_x, σ, σ_last; with_norm=false)
+    f = build_mlp_chain(D_z, D_h, D_x, σ, σ_last; norm=norm)
     return Generator(base, f, n_default)
 end
 
@@ -83,9 +83,9 @@ end
 
 Flux.@treelike(Projector)
 
-function Projector(D_x::Int, D_h::AbstractArray{Int}, D_fx::Int, σ)
+function Projector(D_x::Int, D_h::AbstractArray{Int}, D_fx::Int, σ, norm)
     σ = parse_op(σ)
-    f = build_mlp_chain(D_x, D_h, D_fx, σ, identity; with_norm=false)
+    f = build_mlp_chain(D_x, D_h, D_fx, σ, identity; norm=norm)
     return Projector(f, D_fx)
 end
 
@@ -99,9 +99,9 @@ end
 
 Flux.@treelike(Discriminator)
 
-function Discriminator(D_x::Int, D_h::AbstractArray{Int}, σ)
+function Discriminator(D_x::Int, D_h::AbstractArray{Int}, σ, norm)
     σ = parse_op(σ)
-    f = build_mlp_chain(D_x, D_h, 1, σ, identity; with_norm=false)
+    f = build_mlp_chain(D_x, D_h, 1, σ, identity; norm=norm)
     return Discriminator(f)
 end
 

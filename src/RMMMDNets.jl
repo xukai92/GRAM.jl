@@ -7,18 +7,18 @@ export enable_gpu, disable_gpu
 
 using Statistics, LinearAlgebra, StatsFuns, Distributions
 using Logging, TensorBoardLogger, Humanize, Dates
-using Flux, Flux.Data.MNIST, Tracker
+using Flux, Flux.Data.MNIST, Tracker, CuArrays
 using ProgressMeter: @showprogress
 using Random: shuffle, MersenneTwister, AbstractRNG, GLOBAL_RNG
-using MLToolkit: DATETIME_FMT, @tb, istb, plt, plot_grayimg!, autoset_lim!, nparams, flatten_dict, dict2namedtuple
+include("anonymized.jl")
 
 ###
 
 function parse_toml(toml, dataset, model_name)
     # Extract from TOML dict
-    args_dict_str = merge(toml["common"], filter(p -> !(p.second isa Dict), toml[dataset]), toml[dataset][model_name])
+    args_dict_strkey = merge(toml["common"], filter(p -> !(p.second isa Dict), toml[dataset]), toml[dataset][model_name])
     # Convert keys to Symbol
-    args_dict = Dict(Symbol(p.first) => p.second for p in args_dict_str)
+    args_dict = Dict(Symbol(p.first) => p.second for p in args_dict_strkey)
     # Add dataset and model_name
     args_dict[:dataset] = dataset
     args_dict[:model_name] = model_name
@@ -30,6 +30,7 @@ function parse_args_dict(_args_dict; override::NamedTuple=NamedTuple(), suffix::
     args_dict = copy(_args_dict)
     # Oeverride
     for k in keys(override)
+        @assert k in keys(args_dict) "Cannot overrid unexistent keys: $k"
         args_dict[k] = override[k]
     end
     # Show arguments
@@ -43,8 +44,8 @@ function parse_args_dict(_args_dict; override::NamedTuple=NamedTuple(), suffix::
         :act_last,
     ]
     exp_name = flatten_dict(args_dict; exclude=exclude)
-    exp_name *= "-seed=$(args_dict[:seed])" # always put seed in the end
-    if !isnothing(suffix) && suffix != ""
+    exp_name *= "-seed=$(args_dict[:seed])" # always put seed in the end 
+    if suffix != ""
         exp_name *= "-$suffix"
     end
     # Add exp_name to args_dict
@@ -148,14 +149,14 @@ function get_model(args::NamedTuple, data::Data)
     elseif args.base == "gaussian"
         base = GaussianBase(args.D_z)
     end
-    g = Generator(base, args.D_z, args.Dg_h, data.dim, args.act, args.act_last, args.batch_size_gen)
+    g = Generator(base, args.D_z, args.Dg_h, data.dim, args.act, args.act_last, args.norm, args.batch_size_gen)
     if args.model_name == "gan"
-        d = Discriminator(data.dim, args.Dd_h, args.act)
+        d = Discriminator(data.dim, args.Dd_h, args.act, args.norm)
         m = GAN(Ref(0), logger, g, Flux.params(g), d, Flux.params(d), opt)
     elseif args.model_name == "mmdnet"
         m = MMDNet(Ref(0), logger, g, Flux.params(g), opt, args.sigma)
     elseif args.model_name == "rmmmdnet"
-        f = Projector(data.dim, args.Df_h, args.D_fx, args.act)
+        f = Projector(data.dim, args.Df_h, args.D_fx, args.act, args.norm)
         m = RMMMDNet(Ref(0), logger, g, Flux.params(g), f, Flux.params(f), opt, args.sigma)
     end
     @info "Init $(args.model_name) with $(nparams(m) |> Humanize.digitsep) parameters" logdir

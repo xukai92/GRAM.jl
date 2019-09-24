@@ -1,4 +1,4 @@
-using DensityRatioEstimation: pairwise_sqd, gaussian_gram_by_pairwise_sqd
+gaussian_gram_by_pairwise_sqd(pdot, σ) = exp.(-pdot ./ 2(σ ^ 2))
 
 _compute_mmd_sq(Kdede, Kdenu, Knunu) = mean(Kdede) - 2mean(Kdenu) + mean(Knunu)
 
@@ -179,10 +179,11 @@ function step!(m::MMDNet, x_data)
 
     # Forward
     x_gen = rand(m.g)
-    loss_g = compute_mmd(x_gen, x_data; σs=m.σs)
+    mmd = compute_mmd(x_gen, x_data; σs=m.σs)
+    loss_g = mmd
     update_by_loss!(loss_g, m.ps_g, m.opt)
 
-    return (loss_g=loss_g,)
+    return (mmd=mmd, loss_g=loss_g,)
 end
 
 function evaluate(d::Data, m::MMDNet)
@@ -220,6 +221,7 @@ function step!(m::RMMMDNet, x_data)
     ratio, mmd = RMMMDNets.estimate_ratio_compute_mmd(fx_gen, fx_data; σs=m.σs)
     pearson_divergence = mean((ratio .- 1) .^ 2)
     raito_mean = mean(ratio)
+    # loss_f_multiplier = 1e-1 / size(fx_gen, 1)    # experimental; not used
     loss_f_multiplier = 1e-2
     loss_f = loss_f_multiplier * -(pearson_divergence + raito_mean)
     loss_g = mmd
@@ -237,7 +239,9 @@ function step!(m::RMMMDNet, x_data)
     Tracker.update!(m.opt, m.ps_f, gs_f)
     Tracker.update!(m.opt, m.ps_g, gs_g)
 
+    ratio_orig = estimate_ratio(x_gen |> Flux.data, x_data; σs=m.σs) |> Flux.data
     return (
+        squared_distance=mean((ratio_orig - Flux.data(ratio)) .^ 2),
         pearson_divergence=pearson_divergence,
         raito_mean=raito_mean,
         loss_f_multiplier=loss_f_multiplier,
