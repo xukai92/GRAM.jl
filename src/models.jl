@@ -91,18 +91,22 @@ function Tracker.gradient(f, xs::Params; once=true)
 end
 
 function train!(m::AbstractGenerativeModel, n_epochs::Int, dl::DataLoader)
-    with_logger(m.logger) do
-        @showprogress for epoch in 1:n_epochs, (x_data,) in dl.train
-            # Step training
-            step_info = step!(m, x_data)
-            m.iter.x += 1
-            # Logging
-            Flux.testmode!(m)
-            @info "train" step_info...
-            if m.iter.x % 10 == 0
-                @info "eval" evaluate(dl.data, m)... log_step_increment=0
+    @showprogress for epoch in 1:n_epochs
+        with_logger(m.logger) do
+            for (x_data,) in dl.train
+                # Step training
+                step_info = step!(m, x_data)
+                m.iter.x += 1
+                # Logging
+                Flux.testmode!(m)
+                @info "train" step_info...
+                if m.iter.x % 10 == 0
+                    @info "eval" evaluate(dl.data, m)... log_step_increment=0
+                end
             end
         end
+        # Save model after each full pass of the dataset
+        save!(m)
     end
 end
 

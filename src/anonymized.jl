@@ -130,20 +130,20 @@ end
 
 ###
 
-using Flux.CuArrays
+# using Flux.CuArrays
 
-Base.inv(x::CuArray{<:Real,2}) = CuArrays.CUBLAS.matinv_batched([x])[2][1]
+# Base.inv(x::CuArray{<:Real,2}) = CuArrays.CUBLAS.matinv_batched([x])[2][1]
 
-const CuOrAdj = Union{CuArray, LinearAlgebra.Adjoint{T, CuArray{T, 2}}} where {T<:AbstractFloat}
-function Base.:\(_A::AT1, _B::AT2) where {AT1<:CuOrAdj, AT2<:CuOrAdj}
-    A, B = copy(_A), copy(_B)
-    A, ipiv = CuArrays.CUSOLVER.getrf!(A)
-    return CuArrays.CUSOLVER.getrs!('N', A, ipiv, B)
-end
+# const CuOrAdj = Union{CuArray, LinearAlgebra.Adjoint{T, CuArray{T, 2}}} where {T<:AbstractFloat}
+# function Base.:\(_A::AT1, _B::AT2) where {AT1<:CuOrAdj, AT2<:CuOrAdj}
+#     A, B = copy(_A), copy(_B)
+#     A, ipiv = CuArrays.CUSOLVER.getrf!(A)
+#     return CuArrays.CUSOLVER.getrs!('N', A, ipiv, B)
+# end
 
-Tracker.@grad function (A \ B)
-    return Tracker.data(A) \ Tracker.data(B), function (Δ)
-        ∇A = -(A' \ Δ) * B' / A'
-        return (∇A,  (A' \ Δ))
-    end
-end
+# Tracker.@grad function (A \ B)
+#     return Tracker.data(A) \ Tracker.data(B), function (Δ)
+#         ∇A = -(A' \ Δ) * B' / A'
+#         return (∇A,  (A' \ Δ))
+#     end
+# end

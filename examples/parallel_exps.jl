@@ -13,12 +13,6 @@ end
 rmmmdnets_path = pathof(RMMMDNets) |> splitdir |> first |> splitdir |> first
 hyper = TOML.parsefile("$rmmmdnets_path/examples/Hyper.toml")
 
-@everywhere begin
-    # dataset = "gaussian"
-    dataset = "ring"
-    # dataset = "mnist"
-end
-
 function get_args_list_varying_D_z_and_Dg_h(dataset)
     Dg_h_list_dict = Dict(
         "gaussian" => ["10,10", "50,50", "100,100"],
@@ -58,24 +52,23 @@ function get_args_list_varying_D_fx()
     return args_list
 end
 
-# args_list = get_args_list_varying_D_z_and_Dg_h(dataset)
+# Figure 1
 # args_list = get_args_list_varying_D_fx()
-args_list = begin
-    args_dict = parse_toml(hyper, "ring", "rmmmdnet")
-    args = parse_args_dict(
-        args_dict; 
-        override=(D_fx=2,), 
-        suffix="monitor_eq5"
-    )
-    [args]
-end
+
+# Figure 2
+# dataset = "gaussian"
+dataset = "ring"
+args_list = get_args_list_varying_D_z_and_Dg_h(dataset)
+
+# Appendix: GRAM-net on MNIST
+# args = [parse_args_dict(parse_toml(hyper, "mnist", "rmmmdnet"); override=(lr=1f-3, Df_h="conv", sigma="0.1,1,10,100",))]
 
 ###
 
 @everywhere begin
-    data = get_data(dataset)
-
     function run_exp(args)
+        data = get_data(args.dataset)
+
         seed!(args.seed)
 
         model = get_model(args, data)

@@ -31,7 +31,11 @@ function parse_args_dict(_args_dict; override::NamedTuple=NamedTuple(), suffix::
     # Oeverride
     for k in keys(override)
         @assert k in keys(args_dict) "Cannot overrid unexistent keys: $k"
-        args_dict[k] = override[k]
+        v = override[k]
+        if args_dict[k] == v
+            @warn "The values for key :$k in `args_dict` and `override` are the same: $v."
+        end
+        args_dict[k] = v
     end
     # Show arguments
     @info "Args" args_dict...
@@ -50,19 +54,6 @@ function parse_args_dict(_args_dict; override::NamedTuple=NamedTuple(), suffix::
     end
     # Add exp_name to args_dict
     args_dict[:exp_name] = exp_name
-    # Parse "1,2,3" => [1,2,3]
-    parse_csv(T, l) = map(x -> parse(T, x), split(l, ","))
-    if :sigma in keys(args_dict)
-        args_dict[:sigma] = if args_dict[:sigma] == "median"; []
-        else parse_csv(Float32, args_dict[:sigma]) end
-    end
-    args_dict[:Dg_h] = parse_csv(Int, args_dict[:Dg_h])
-    if :Dd_h in keys(args_dict)
-        args_dict[:Dd_h] = parse_csv(Int, args_dict[:Dd_h])
-    end
-    if :Df_h in keys(args_dict)
-        args_dict[:Df_h] = parse_csv(Int, args_dict[:Df_h])
-    end
     # Convert dict to named tuple
     args = dict2namedtuple(args_dict)
     return args
@@ -135,6 +126,8 @@ function plot!(d::Data, g::Generator, f::Projector)
     end
 end
 
+parse_csv(T, l) = map(x -> parse(T, x), split(l, ","))
+
 function get_model(args::NamedTuple, data::Data)
     module_path = pathof(@__MODULE__) |> splitdir |> first |> splitdir |> first
     logdir = "$(data.dataset)/$(args.model_name)/$(args.exp_name)/$(Dates.format(now(), DATETIME_FMT))"
@@ -149,15 +142,29 @@ function get_model(args::NamedTuple, data::Data)
     elseif args.base == "gaussian"
         base = GaussianBase(args.D_z)
     end
-    g = Generator(base, args.D_z, args.Dg_h, data.dim, args.act, args.act_last, args.norm, args.batch_size_gen)
+    Dg_h = parse_csv(Int, args.Dg_h)
+    g = Generator(base, args.D_z, Dg_h, data.dim, args.act, args.act_last, args.norm, args.batch_size_gen)
     if args.model_name == "gan"
-        d = Discriminator(data.dim, args.Dd_h, args.act, args.norm)
+        if args.Dd_h == "conv"
+            d = ConvDiscriminator(data.dim, args.act, args.norm)
+        else
+            Dd_h = parse_csv(Int, args.Dd_h)
+            d = Discriminator(data.dim, Dd_h, args.act, args.norm)
+        end
         m = GAN(Ref(0), logger, g, Flux.params(g), d, Flux.params(d), opt)
-    elseif args.model_name == "mmdnet"
-        m = MMDNet(Ref(0), logger, g, Flux.params(g), opt, args.sigma)
-    elseif args.model_name == "rmmmdnet"
-        f = Projector(data.dim, args.Df_h, args.D_fx, args.act, args.norm)
-        m = RMMMDNet(Ref(0), logger, g, Flux.params(g), f, Flux.params(f), opt, args.sigma)
+    else
+        sigma = args.sigma == "median" ? [] : parse_csv(Float32, args.sigma)
+        if args.model_name == "mmdnet"
+            m = MMDNet(Ref(0), logger, g, Flux.params(g), opt, sigma)
+        elseif args.model_name == "rmmmdnet"
+            if args.Df_h == "conv"
+                f = ConvProjector(data.dim, args.D_fx, args.act, args.norm)
+            else
+                Df_h = parse_csv(Int, args.Df_h)
+                f = Projector(data.dim, Df_h, args.D_fx, args.act, args.norm)
+            end
+            m = RMMMDNet(Ref(0), logger, g, Flux.params(g), f, Flux.params(f), opt, sigma)
+        end
     end
     @info "Init $(args.model_name) with $(nparams(m) |> Humanize.digitsep) parameters" logdir
     m = use_gpu.x ? gpu(m) : m
