@@ -44,7 +44,6 @@ function estimate_ratio_compute_mmd(x_de, x_nu; σs=[], verbose=false)
     )
 end
 
-# TODO: implement running average of median
 function multi_run(f_run, x_de, x_nu, σs, verbose)
     pdot_dede = pairwise_sqd(x_de)
     pdot_denu = pairwise_sqd(x_de, x_nu)

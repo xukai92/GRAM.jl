@@ -7,7 +7,8 @@ export enable_gpu, disable_gpu
 
 using Statistics, LinearAlgebra, StatsFuns, Distributions
 using Logging, TensorBoardLogger, Humanize, Dates
-using Flux, Flux.Data.MNIST, Tracker, CuArrays
+using Flux, Flux.Data.MNIST, Tracker
+# using CuArrays
 using ProgressMeter: @showprogress
 using Random: shuffle, MersenneTwister, AbstractRNG, GLOBAL_RNG
 include("anonymized.jl")
