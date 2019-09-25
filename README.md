@@ -14,6 +14,7 @@ The repo is arranged as below
   - `data.jl`: definition of data
   - `modules.jl`: modules including generator, discriminator and projector
   - `models.jl`: models including GAN, MMD-net and GRAM-net
+- `tf_logs.zip`: TensorBoard logs for Section 3.4
 
 **NOTE**: GRAM-net is also referred `RMMMDNet` or `rmmmdnet` across the code.
 
