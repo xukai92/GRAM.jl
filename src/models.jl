@@ -225,7 +225,6 @@ function step!(m::RMMMDNet, x_data)
     ratio, mmd = RMMMDNets.estimate_ratio_compute_mmd(fx_gen, fx_data; σs=m.σs)
     pearson_divergence = mean((ratio .- 1) .^ 2)
     raito_mean = mean(ratio)
-    # loss_f_multiplier = 1e-1 / size(fx_gen, 1)    # experimental; not used
     loss_f = -(pearson_divergence + raito_mean)
     loss_g = mmd
 
