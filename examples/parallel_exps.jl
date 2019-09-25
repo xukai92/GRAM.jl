@@ -53,12 +53,12 @@ function get_args_list_varying_D_fx()
 end
 
 # Figure 1
-# args_list = get_args_list_varying_D_fx()
+args_list = get_args_list_varying_D_fx()
 
 # Figure 2
 # dataset = "gaussian"
-dataset = "ring"
-args_list = get_args_list_varying_D_z_and_Dg_h(dataset)
+# dataset = "ring"
+# args_list = get_args_list_varying_D_z_and_Dg_h(dataset)
 
 # Appendix: GRAM-net on MNIST
 # args = [parse_args_dict(parse_toml(hyper, "mnist", "rmmmdnet"); override=(lr=1f-3, Df_h="conv", sigma="0.1,1,10,100",))]

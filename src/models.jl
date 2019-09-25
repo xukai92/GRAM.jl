@@ -226,8 +226,7 @@ function step!(m::RMMMDNet, x_data)
     pearson_divergence = mean((ratio .- 1) .^ 2)
     raito_mean = mean(ratio)
     # loss_f_multiplier = 1e-1 / size(fx_gen, 1)    # experimental; not used
-    loss_f_multiplier = 1e-2
-    loss_f = loss_f_multiplier * -(pearson_divergence + raito_mean)
+    loss_f = -(pearson_divergence + raito_mean)
     loss_g = mmd
 
     # Collect gradients
@@ -248,7 +247,6 @@ function step!(m::RMMMDNet, x_data)
         squared_distance=mean((ratio_orig - Flux.data(ratio)) .^ 2),
         pearson_divergence=pearson_divergence,
         raito_mean=raito_mean,
-        loss_f_multiplier=loss_f_multiplier,
         loss_f=loss_f,
         mmd=mmd,
         loss_g=loss_g,
