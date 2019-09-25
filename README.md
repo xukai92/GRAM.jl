@@ -1,4 +1,4 @@
-# Source code for the paper *Generative Ratio Matching Networks*
+# Source code for *Generative Ratio Matching Networks*
 
 The repo is arranged as below
 
