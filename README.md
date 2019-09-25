@@ -7,7 +7,7 @@ The repo is arranged as below
 - `examples/`
   - `Hyper.toml`: hyper parameter settings
   - `demo.ipynb`: notebook to paly with the model interactively
-  - `parallel_exps.jl`: run experiments in Section 3.4 parallely
+  - `parallel_exps.jl`: run experiments in Section 3.4 parallelly
 - `src/`
   - `RMMMDNets.jl`: helper functions
   - `anonymized.jl`: codes copied for anonymization purpose
@@ -20,7 +20,7 @@ The repo is arranged as below
 
 ### How to run the code
 
-1. Install [Julia](https://julialang.org/downloads/) and make `julia` avaiable in your executable path.
+1. Install [Julia](https://julialang.org/downloads/) and make `julia` available in your executable path.
 2. Download the code in a location which we will refer as `GRAM_DIR`.
 3. Start a Julia REPL by entering `julia` in your terminal.
     - Press `]` button to enter the package manager.
@@ -36,6 +36,6 @@ The repo is arranged as below
     - To produce other plots, you need to edit `parallel_exps.jl` as below and run the same command.
         - For Figure 2, uncomment L60 and L61.
         - For Figure 7 in the appendix, uncomment L64.
-    - This script by default using 9 cores to run experiments in parall. If you want to use another number of cores, please change L2 of `parallel_exps.jl`. 
+    - This script by default using 9 cores to run experiments in parallel. If you want to use another number of cores, please change L2 of `parallel_exps.jl`. 
 
-Our code by default logs all the trianing details in `$GRAM_DIR/logs`, for which you can view using TensorBoard. 
+Our code by default logs all the training details in `$GRAM_DIR/logs`, for which you can view using TensorBoard. 
