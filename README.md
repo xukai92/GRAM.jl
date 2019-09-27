@@ -14,9 +14,11 @@ The repo is arranged as below
   - `data.jl`: definition of data
   - `modules.jl`: modules including generator, discriminator and projector
   - `models.jl`: models including GAN, MMD-net and GRAM-net
-- `tf_logs.zip`: TensorBoard logs for Section 3.4
+- ~~`tf_logs.zip`: TensorBoard logs for Section 3.4~~
 
 **NOTE**: GRAM-net is also referred `RMMMDNet` or `rmmmdnet` across the code.
+
+**UPDATE**: As the [anonymous_github](https://github.com/tdurieux/anonymous_github/) service fails to support [Git LFS](https://git-lfs.github.com/). We now provide our TensorBoard logs via Google Drive anonymously. Please download them from [here](https://drive.google.com/file/d/11vBwqom3he2RxgBtOypeFJD1ut-URWE4/view?usp=sharing).
 
 ### How to run the code
 
