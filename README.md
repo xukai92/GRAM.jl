@@ -5,7 +5,7 @@ The repo is arranged as below
 - `Manifest.toml`: environment file
 - `Project.toml`: project dependencies
 - `examples/`
-  - `Hyper.toml`: hyper parameter settings
+  - `Hyper.toml`: hyperparameter settings
   - `demo.ipynb`: notebook to paly with the model interactively
   - `parallel_exps.jl`: run experiments in Section 3.4 parallelly
 - `src/`
@@ -16,9 +16,9 @@ The repo is arranged as below
   - `models.jl`: models including GAN, MMD-net and GRAM-net
 - ~~`tf_logs.zip`: TensorBoard logs for Section 3.4~~
 
-**NOTE**: GRAM-net is also referred `RMMMDNet` or `rmmmdnet` across the code.
+**NOTE**: GRAM-net is also referred as `RMMMDNet` or `rmmmdnet` across the code.
 
-**UPDATE**: As the [anonymous_github](https://github.com/tdurieux/anonymous_github/) service fails to support [Git LFS](https://git-lfs.github.com/). We now provide our TensorBoard logs via Google Drive anonymously. Please download them from [here](https://drive.google.com/file/d/11vBwqom3he2RxgBtOypeFJD1ut-URWE4/view?usp=sharing).
+**UPDATE**: As the [Anonymous Github](https://github.com/tdurieux/anonymous_github/) service fails to support [Git LFS](https://git-lfs.github.com/). We now provide our TensorBoard logs via Google Drive anonymously. Please download them from [here](https://drive.google.com/file/d/11vBwqom3he2RxgBtOypeFJD1ut-URWE4/view?usp=sharing). Similarly, as you cannot clone this repo via Anonymous Github, the code in this repo is also provided at [here](https://drive.google.com/file/d/1lWAkwp8K_ddr9dfDdWTvGOP5swkDVugY/view?usp=sharing).
 
 ### How to run the code
 
@@ -38,6 +38,6 @@ The repo is arranged as below
     - To produce other plots, you need to edit `parallel_exps.jl` as below and run the same command.
         - For Figure 2, uncomment L60 and L61.
         - For Figure 7 in the appendix, uncomment L64.
-    - This script by default using 9 cores to run experiments in parallel. If you want to use another number of cores, please change L2 of `parallel_exps.jl`. 
+    - This script by default using 9 cores to run experiments in parallel. If you want to use another number of cores, please change L2. 
 
 Our code by default logs all the training details in `$GRAM_DIR/logs`, for which you can view using TensorBoard. 
