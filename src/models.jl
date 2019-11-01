@@ -1,4 +1,9 @@
-gaussian_gram_by_pairwise_sqd(pdot, σ) = exp.(-pdot ./ 2(σ ^ 2))
+using DensityRatioEstimation: DensityRatioEstimation, gaussian_gram_by_pairwise_sqd, pairwise_sqd, MMDAnalytical, _estimate_ratio
+
+function DensityRatioEstimation.adddiag(mmd::MMDAnalytical{T, Val{:true}}, Kdede::Union{MLToolkit.Flux.CuArray,MLToolkit.Tracker.TrackedArray}) where {T}
+    ϵ = diagm(0 => mmd.ϵ * fill(one(T), size(Kdede, 1)))
+    return Kdede + gpu(ϵ)
+end
 
 _compute_mmd_sq(Kdede, Kdenu, Knunu) = mean(Kdede) - 2mean(Kdenu) + mean(Knunu)
 
@@ -13,19 +18,11 @@ function compute_mmd(x_de, x_nu; σs=[], verbose=false)
     return sqrt(mmd_sq + 1f-6)
 end
 
-function _estimate_ratio(Kdede, Kdenu)
-    n_de, n_nu = size(Kdenu)
-    eps = diagm(0 => fill(1f-3 * one(Float32), size(Kdede, 1)))
-    eps = use_gpu.x ? gpu(eps) : eps
-    Kdede_stable = Kdede + eps
-    return convert(Float32, n_de / n_nu) * (Kdede_stable \ sum(Kdenu; dims=2)[:,1])
-end
-
 function estimate_ratio(x_de, x_nu; σs=[], verbose=false)
     function f(pdot_dede, pdot_denu, pdot_nunu, σ)
         Kdede = gaussian_gram_by_pairwise_sqd(pdot_dede, σ)
         Kdenu = gaussian_gram_by_pairwise_sqd(pdot_denu, σ)
-        return _estimate_ratio(Kdede, Kdenu)
+        return _estimate_ratio(MMDAnalytical(1f-3), Kdede, Kdenu)
     end
     return multi_run(f, x_de, x_nu, σs, verbose) / convert(Float32, length(σs))
 end
@@ -35,7 +32,7 @@ function estimate_ratio_compute_mmd(x_de, x_nu; σs=[], verbose=false)
         Kdede = gaussian_gram_by_pairwise_sqd(pdot_dede, σ)
         Kdenu = gaussian_gram_by_pairwise_sqd(pdot_denu, σ)
         Knunu = gaussian_gram_by_pairwise_sqd(pdot_nunu, σ)
-        return (_estimate_ratio(Kdede, Kdenu), _compute_mmd_sq(Kdede, Kdenu, Knunu))
+        return (_estimate_ratio(MMDAnalytical(1f-3), Kdede, Kdenu), _compute_mmd_sq(Kdede, Kdenu, Knunu))
     end
     ratio, mmd_sq = multi_run(f, x_de, x_nu, σs, verbose)
     return (
@@ -44,205 +41,163 @@ function estimate_ratio_compute_mmd(x_de, x_nu; σs=[], verbose=false)
     )
 end
 
+function multi_run_verbose(σ, verbose)
+    if verbose
+        @info "Automatically choose σ using the median of pairwise distances: $σ."
+    end
+    @tb @info "train" σ_median=σ log_step_increment=0
+end
+
+Flux.Zygote.@nograd multi_run_verbose
+
 function multi_run(f_run, x_de, x_nu, σs, verbose)
     pdot_dede = pairwise_sqd(x_de)
     pdot_denu = pairwise_sqd(x_de, x_nu)
     pdot_nunu = pairwise_sqd(x_nu)
     
     if isempty(σs)
-        σ = sqrt(median(vcat(vec.(Flux.data.([pdot_dede, pdot_denu, pdot_nunu])))))
-        if verbose
-            @info "Automatically choose σ using the median of pairwise distances: $σ."
-        end
-        @tb @info "train" σ_median=σ log_step_increment=0
+        σ = sqrt(median(vcat(vec.(Tracker.data.([pdot_dede, pdot_denu, pdot_nunu])))))
+        multi_run_verbose(σ, verbose)
         σs = [σ]
     end
+    
+    res = f_run(pdot_dede, pdot_denu, pdot_nunu, σs[1])
+    for σ in σs[2:end]
+        _res = f_run(pdot_dede, pdot_denu, pdot_nunu, σ)
+        if res isa Tuple
+            res = tuple((res[i] .+ _res[i] for i in 1:length(res))...)
+        else
+            res += _res
+        end
+    end
 
-    return mapreduce(
-        σ -> f_run(pdot_dede, pdot_denu, pdot_nunu, σ), 
-        (x, y) -> x .+ y, 
-        σs
-    )
+    return res
 end
 
 ###
 
-abstract type AbstractGenerativeModel end
-
-function update_by_loss!(loss, ps, opt; n=1)
-    gs = Tracker.gradient(() -> loss, ps)
-    for i in 1:n
-        Tracker.update!(opt, ps, gs)
-    end
-end
-
-using Tracker: Params, losscheck, @interrupts, Grads, tracker, extract_grad!, zero_grad!, grad
-
-function Tracker.gradient(f, xs::Params; once=true)
-  l = f()
-  losscheck(l)
-  @interrupts back!(l; once=once)
-  gs = Grads()
-  for x in xs
-    gs[tracker(x)] = extract_grad!(x)
-  end
-  return gs
-end
-
-function train!(m::AbstractGenerativeModel, n_epochs::Int, dl::DataLoader)
-    @showprogress for epoch in 1:n_epochs
-        with_logger(m.logger) do
-            for (x_data,) in dl.train
-                # Step training
-                step_info = step!(m, x_data)
-                m.iter.x += 1
-                # Logging
-                Flux.testmode!(m)
-                @info "train" step_info...
-                if m.iter.x % 10 == 0
-                    @info "eval" evaluate(dl.data, m)... log_step_increment=0
-                end
-            end
-        end
-        # Save model after each full pass of the dataset
-        save!(m)
-    end
-end
-
-# GAN
-
-struct GAN <: AbstractGenerativeModel
-    iter::Base.RefValue{Int}
-    logger::AbstractLogger
-    g::Generator
-    ps_g
-    d::Discriminator
-    ps_d
-    opt
-end
-
-Flux.mapchildren(f, m::GAN) = GAN(m.iter, m.logger, f(m.g), m.ps_g, f(m.d), m.ps_d, m.opt)
-Flux.children(m::GAN) = (m.iter, m.logger, m.g, m.ps_g, m.d, m.ps_d, m.opt)
-
-function step!(m::GAN, x_data)
-    # Training mode
-    Flux.testmode!(m.d, false)
-    Flux.testmode!(m.g, false)
-    
-    # Update d
-    zero_grad!.(grad.(m.ps_g))
-    zero_grad!.(grad.(m.ps_d))
-    x_gen = rand(m.g)
-    logitŷ_d = m.d(hcat(x_data, x_gen))
-    batch_size, batch_size_gen = last(size(x_data)), last(size(x_gen))
-    y_real, y_fake = ones(1, batch_size), zeros(1, batch_size_gen)
-    y_d = hcat(y_real, y_fake)
-    loss_d = mean(Flux.logitbinarycrossentropy.(logitŷ_d, y_d))
-    update_by_loss!(loss_d, m.ps_d, m.opt)
-
-    # Update g
-    zero_grad!.(grad.(m.ps_g))
-    zero_grad!.(grad.(m.ps_d))
-    x_gen = rand(m.g)
-    logitŷ_g = m.d(x_gen)
-    y_g = y_real
-    loss_g = mean(Flux.logitbinarycrossentropy.(logitŷ_g, y_g))
-    update_by_loss!(loss_g, m.ps_g, m.opt)
-
-    return (
-        loss_d=loss_d,
-        loss_g=loss_g, 
-        accuracy=mean(float.(Flux.data(logitŷ_d) .> 0) .== y_d),
-    )
-end
-
-function evaluate(d::Data, m::GAN)
-    fig = plt.figure(figsize=(3.5, 3.5))
-    plot!(d, m.g)
-    return (gen=fig,)
-end
+abstract type AbstractGenerativeModel <: Trainable end
 
 # MMDNet
 
 struct MMDNet <: AbstractGenerativeModel
-    iter::Base.RefValue{Int}
-    logger::AbstractLogger
-    g::Generator
-    ps_g
+    logger
     opt
     σs
+    g::NeuralSampler
 end
 
-Flux.mapchildren(f, m::MMDNet) = MMDNet(m.iter, m.logger, f(m.g), m.ps_g, m.opt, m.σs)
-Flux.children(m::MMDNet) = (m.iter, m.logger, m.g, m.ps_g, m.opt, m.σs)
+Flux.functor(m::MMDNet) = (m.g,), t -> MMDNet(m.logger, m.opt,  m.σs, t[1])
 
-function step!(m::MMDNet, x_data)
-    # Training mode
-    Flux.testmode!(m, false)
-
-    # Forward
+function MLToolkit.Neural.loss(m::MMDNet, x_data)
     x_gen = rand(m.g)
     mmd = compute_mmd(x_gen, x_data; σs=m.σs)
     loss_g = mmd
-    update_by_loss!(loss_g, m.ps_g, m.opt)
-
-    return (mmd=mmd, loss_g=loss_g,)
+    return (loss_g=loss_g, mmd=mmd,)
 end
 
-function evaluate(d::Data, m::MMDNet)
+function evaluate_g(g, dataset)
     fig = plt.figure(figsize=(3.5, 3.5))
-    plot!(d, m.g)
+    plot!(dataset, g)
     return (gen=fig,)
 end
 
+evaluate(m::MMDNet, dl) = evaluate_g(m.g, dl.dataset)
+
+# GAN
+
+struct GAN <: AbstractGenerativeModel
+    logger
+    opt
+    g::NeuralSampler
+    d::Discriminator
+end
+
+Flux.functor(m::GAN) = (m.g, m.d), t -> GAN(m.logger, m.opt, t[1], t[2])
+
+BCE = Flux.binarycrossentropy
+
+function update!(opt, m::GAN, x_data)
+    y_real, y_fake = 1, 0
+    
+    # Update d
+    ps_d = Flux.params(m.d)
+    local accuracy_d, loss_d
+    gs_d = gradient(ps_d) do
+        x_gen = rand(m.g)
+        n_real = last(size(x_data))
+        ŷ_d_all = m.d(hcat(x_data, x_gen))
+        ŷ_d_real, ŷ_d_fake = ŷ_d_all[:,1:n_real], ŷ_d_all[:,n_real+1:end]
+        accuracy_d = (sum(ŷ_d_real .> 0.5f0) + sum(ŷ_d_fake .< 0.5f0)) / length(ŷ_d_all)
+        loss_d = (sum(BCE.(ŷ_d_real, y_real)) + sum(BCE.(ŷ_d_fake, y_fake))) / length(ŷ_d_all)
+    end
+    Flux.Optimise.update!(opt, ps_d, gs_d)
+
+    # Update g
+    ps_g = Flux.params(m.g)
+    local accuracy_g, loss_g
+    gs_g = gradient(ps_g) do
+        x_gen = rand(m.g)
+        ŷ_g_fake = m.d(x_gen)
+        accuracy_g = mean(ŷ_g_fake .< 0.5f0)
+        loss_g = mean(BCE.(ŷ_g_fake, y_real))
+    end
+    Flux.Optimise.update!(opt, ps_g, gs_g)
+    
+    return (
+        loss_d=loss_d,
+        loss_g=loss_g, 
+        accuracy_d=accuracy_d,
+        accuracy_g=accuracy_g
+    )
+end
+
+evaluate(m::GAN, dl) = evaluate_g(m.g, dl.dataset)
+
 # RMMMDNet
 
+const istraining = Ref(:false)
+Flux.istraining() = istraining[]
+
 struct RMMMDNet <: AbstractGenerativeModel
-    iter::Base.RefValue{Int}
-    logger::AbstractLogger
-    g::Generator
-    ps_g
-    f::Projector
-    ps_f
+    logger
     opt
     σs
+    g::NeuralSampler
+    f::Projector
 end
 
-function Flux.mapchildren(f, m::RMMMDNet)
-    return RMMMDNet(m.iter, m.logger, f(m.g), m.ps_g, f(m.f), m.ps_f, m.opt, m.σs)
-end
-Flux.children(m::RMMMDNet) = (m.iter, m.logger, m.g, m.ps_g, m.f, m.ps_f, m.opt, m.σs)
+Flux.functor(m::RMMMDNet) = (m.g, m.f), t -> RMMMDNet(m.logger, m.opt, m.σs, t[1], t[2])
 
-function step!(m::RMMMDNet, x_data)
+function update!(opt, m::RMMMDNet, x_data)
     # Training mode
-    Flux.testmode!(m.f, false)
-    Flux.testmode!(m.g, false)
+    istraining[] = true
+    ps_g = trackerparams(m.g)
+    ps_f = trackerparams(m.f)
 
     # Forward
     x_gen = rand(m.g)
     fx_gen, fx_data = m.f(x_gen), m.f(x_data)
-    ratio, mmd = RMMMDNets.estimate_ratio_compute_mmd(fx_gen, fx_data; σs=m.σs)
+    ratio, mmd = estimate_ratio_compute_mmd(fx_gen, fx_data; σs=m.σs)
     pearson_divergence = mean((ratio .- 1) .^ 2)
     raito_mean = mean(ratio)
     loss_f = -(pearson_divergence + raito_mean)
     loss_g = mmd
 
     # Collect gradients
-    zero_grad!.(grad.(m.ps_g))
-    zero_grad!.(grad.(m.ps_f))
-    gs_f = Tracker.gradient(() -> loss_f, m.ps_f; once=false)
-
-    zero_grad!.(grad.(m.ps_g))
-    zero_grad!.(grad.(m.ps_f))
-    gs_g = Tracker.gradient(() -> loss_g, m.ps_g)
+    gs_f = gradient(() -> loss_f, ps_f; once=false)
+    Tracker.zero_grad!.(Tracker.grad.(ps_g)) # gradient call above leads to un-zeroed gradients in `ps_g`
+    
+    gs_g = gradient(() -> loss_g, ps_g)
+    Tracker.zero_grad!.(Tracker.grad.(ps_f)) # gradient call above leads to un-zeroed gradients in `ps_f`
     
     # Update f and g
-    Tracker.update!(m.opt, m.ps_f, gs_f)
-    Tracker.update!(m.opt, m.ps_g, gs_g)
+    Flux.Optimise.update!(opt, ps_f, gs_f)
+    Flux.Optimise.update!(opt, ps_g, gs_g)
 
-    ratio_orig = estimate_ratio(x_gen |> Flux.data, x_data; σs=m.σs) |> Flux.data
+    ratio_orig = estimate_ratio(x_gen |> Tracker.data, x_data; σs=m.σs)
     return (
-        squared_distance=mean((ratio_orig - Flux.data(ratio)) .^ 2),
+        squared_distance=mean((ratio_orig - Tracker.data(ratio)) .^ 2),
         pearson_divergence=pearson_divergence,
         raito_mean=raito_mean,
         loss_f=loss_f,
@@ -251,13 +206,14 @@ function step!(m::RMMMDNet, x_data)
     )
 end
 
-function evaluate(d::Data, m::RMMMDNet)
+function evaluate(m::RMMMDNet, dl)
+    istraining[] = false
     fig_g = plt.figure(figsize=(3.5, 3.5))
-    plot!(d, m.g)
-    if m.f.D_fx != 2    # only visualise projector if D_fx is 2
+    plot!(dl.dataset, m.g)
+    if m.f.Dout != 2    # only visualise projector if its output dim is 2
         return (gen=fig_g,)
     end
     fig_f = plt.figure(figsize=(3.5, 3.5))
-    plot!(d, m.g, m.f)
+    plot!(dl.dataset, m.g, m.f)
     return (gen=fig_g, proj=fig_f)
 end

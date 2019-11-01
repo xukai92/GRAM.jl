@@ -1,22 +1,22 @@
 [common]
 seed = 1
-batch_size = 200
-batch_size_gen = 200
+batchsize = 200
+batchsize_g = 200
 
 [gaussian]
   n_epochs = 200
   base = "uniform"
-  D_z = 10
-  Dg_h = "50,50"
+  Dz = 10
+  Dhs_g = "50,50"
   act = "tanh"
-  act_last = "identity"
+  actlast = "identity"
   norm = false
 
   [gaussian.gan]
     opt = "adam"
     lr = 1e-4
     beta1 = 5e-1
-    Dd_h = "50,25"
+    Dhs_d = "50,25"
 
   [gaussian.mmdnet]
     opt = "rmsprop"
@@ -28,23 +28,23 @@ batch_size_gen = 200
     lr = 1e-3
     beta1 = 5e-1
     sigma = "1,2"
-    Df_h = "50,25"
-    D_fx = 5
+    Dhs_f = "50,25"
+    Df = 5
 
 [ring]
   n_epochs = 2_000
   base = "gaussian"
-  D_z = 20
-  Dg_h = "100,100"
+  Dz = 20
+  Dhs_g = "100,100"
   act = "relu"
-  act_last = "identity"
+  actlast = "identity"
   norm = false
 
   [ring.gan]
     opt = "adam"
     lr = 1e-4
     beta1 = 5e-1
-    Dd_h = "100,100"
+    Dhs_d = "100,100"
 
   [ring.mmdnet]
     opt = "rmsprop"
@@ -56,23 +56,23 @@ batch_size_gen = 200
     lr = 1e-3
     beta1 = 5e-1
     sigma = "1"
-    Df_h = "100,100"
-    D_fx = 10
+    Dhs_f = "100,100"
+    Df = 10
 
 [mnist]
-  n_epochs = 20
+  n_epochs = 10
   base = "uniform"
-  D_z = 100
-  Dg_h = "600,600,800"
+  Dz = 100
+  Dhs_g = "200,400,800"
   act = "relu"
-  act_last = "sigmoid"
+  actlast = "sigmoid"
   norm = true
 
   [mnist.gan]
     opt = "adam"
     lr = 1e-4
     beta1 = 5e-1
-    Dd_h = "400,200"
+    Dhs_d = "400,200"
 
   [mnist.mmdnet]
     opt = "rmsprop"
@@ -83,6 +83,6 @@ batch_size_gen = 200
     opt = "adam"
     lr = 1e-3
     beta1 = 5e-1
-    sigma = "1,5,10"
-    Df_h = "400,200"
-    D_fx = 100
+    sigma = "0.1,1,10"
+    Dhs_f = "conv"
+    Df = 100

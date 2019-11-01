@@ -1,137 +1,135 @@
+__precompile__(false)
 module RMMMDNets
 
-const use_gpu = Ref(false)
-enable_gpu() = (use_gpu.x = true)
-disable_gpu() = (use_gpu.x = false)
-export enable_gpu, disable_gpu
+using Statistics, LinearAlgebra, StatsFuns, Distributions, Humanize, Dates, Flux.Data.MNIST
+using Random: MersenneTwister, shuffle
 
-using Statistics, LinearAlgebra, StatsFuns, Distributions
-using Logging, TensorBoardLogger, Humanize, Dates
-using Flux, Flux.Data.MNIST, Tracker
-# using CuArrays
-using ProgressMeter: @showprogress
-using Random: shuffle, MersenneTwister, AbstractRNG, GLOBAL_RNG
-include("anonymized.jl")
+using MLToolkit
+using MLToolkit.Neural: IntIte, Tracker
+import MLToolkit.Neural: evaluate, update!
+import MLToolkit: parse_toml, process_argdict, NeuralSampler
+export DataLoader
 
-###
+### Scripting
 
-function parse_toml(toml, dataset, model_name)
-    # Extract from TOML dict
-    args_dict_strkey = merge(toml["common"], filter(p -> !(p.second isa Dict), toml[dataset]), toml[dataset][model_name])
-    # Convert keys to Symbol
-    args_dict = Dict(Symbol(p.first) => p.second for p in args_dict_strkey)
-    # Add dataset and model_name
-    args_dict[:dataset] = dataset
-    args_dict[:model_name] = model_name
-    return args_dict
+function parse_toml(hyperpath::String, dataset::String, modelname::String)
+    return parse_toml(hyperpath, (:dataset => dataset, :modelname => modelname))
 end
 
-function parse_args_dict(_args_dict; override::NamedTuple=NamedTuple(), suffix::String="")
-    # Imutability
-    args_dict = copy(_args_dict)
-    # Oeverride
-    for k in keys(override)
-        @assert k in keys(args_dict) "Cannot overrid unexistent keys: $k"
-        v = override[k]
-        if args_dict[k] == v
-            @warn "The values for key :$k in `args_dict` and `override` are the same: $v."
-        end
-        args_dict[k] = v
-    end
-    # Show arguments
-    @info "Args" args_dict...
-    # Generate experiment name from dict
-    exclude = [
-        :seed,
-        :dataset,
-        :model_name,
-        :n_epochs,
-        :act_last,
-    ]
-    exp_name = flatten_dict(args_dict; exclude=exclude)
-    exp_name *= "-seed=$(args_dict[:seed])" # always put seed in the end 
-    if suffix != ""
-        exp_name *= "-$suffix"
-    end
-    # Add exp_name to args_dict
-    args_dict[:exp_name] = exp_name
-    # Convert dict to named tuple
-    args = dict2namedtuple(args_dict)
-    return args
+function process_argdict(argdict; override=NamedTuple(), suffix="")
+    return process_argdict(
+        argdict; 
+        override=override,
+        nameexclude=[:dataset, :modelname, :n_epochs, :actlast],
+        nameinclude_last=:seed,
+        suffix=suffix
+    )
 end
 
-export parse_toml, parse_args_dict
+export parse_toml, process_argdict
 
-###
+### Neural sampler
 
-include("data.jl")
-export Data, DataLoader
-include("modules.jl")
-export Generator, Projector
+function NeuralSampler(
+    base, 
+    Dz::Int, 
+    Dhs::IntIte, 
+    Dx::Int, 
+    σ::Function, 
+    σlast::Function, 
+    isnorm::Bool, 
+    n_default::Int
+)
+    size(base) != (Dz,) && throw(DimensionMismatch("size(base) ($(size(base))) != (Dz,) ($((Dz,)))"))
+    return NeuralSampler(base, DenseNet(Dz, Dhs, Dx, σ, σlast; isnorm=isnorm), n_default)
+end
+
+### Projector
+
+function DenseProjector(Dx::Int, Dhs::IntIte, Df::Int, σ::Function, isnorm::Bool)
+    return Projector(DenseNet(Dx, Dhs, Df, σ, identity; isnorm=isnorm), Df)
+end
+
+function ConvProjector(Dx::Int, Df::Int, σ::Function, isnorm::Bool)
+    @assert Dx == 28 * 28 "[ConvProjector] Only MNIST-like data is supported."
+    return Projector(ConvNet((28, 28, 1), Df, σ, identity; isnorm=isnorm), Df)
+end
+
+### Discriminator
+
+function DenseDiscriminator(Dx::Int, Dhs::IntIte, σ::Function, isnorm::Bool)
+    return Discriminator(DenseNet(Dx, Dhs, 1, σ, sigmoid; isnorm=isnorm))
+end
+
+function ConvDiscriminator(Dx::Int, σ::Function, isnorm::Bool)
+    @assert Dx == 28 * 28 "[ConvDiscriminator] Only MNIST-like data is supported."
+    return Discriminator(ConvNet((28, 28, 1), 1, σ, sigmoid; isnorm=isnorm))
+end
+
 include("models.jl")
 export GAN, MMDNet, RMMMDNet, train!, evaluate
 
 ###
 
-function get_data(dataset::String)
+function get_data(name::String)
     rng = MersenneTwister(1)
-    if dataset == "mnist"
-        X_train = Array{Float32,2}(hcat(float.(reshape.(MNIST.images(), :))...))
-        dim = size(X_train, 1)
+    if name == "mnist"
+        Xtrain = Array{Float32,2}(hcat(float.(reshape.(MNIST.images(), :))...))
     end
-    if dataset == "gaussian"
+    if name == "gaussian"
         N = 1_000
-        X_train = rand(rng, MvNormal(zeros(Float32, 2), Float32[0.25 0.25; 0.25 1]), N)
+        Xtrain = rand(rng, MvNormal(zeros(Float32, 2), Float32[0.25 0.25; 0.25 1]), N)
     end
-    if dataset == "ring"
+    if name == "ring"
         N = 1_000
-        X_train = rand(rng, Ring(8, 2, 2f-1), N)
+        Xtrain = rand(rng, Ring(8, 2, 2f-1), N)
     end
-    X_train = use_gpu.x ? gpu(X_train) : X_train
-    return Data(dataset, X_train)
+    return Dataset(gpu(Xtrain); name=name)
 end
 
-function plot!(d::Data, g::Generator)
+function plot!(d::Dataset, g::NeuralSampler)
     rng = MersenneTwister(1)
-    if d.dataset == "mnist" 
-        x_data = d.train
-        x_gen = rand(rng, g, 32) |> cpu |> Flux.data
-        plot_grayimg!(hcat(x_data[:,shuffle(rng, 1:last(size(x_data)))[1:32]], x_gen))
-    elseif d.dataset in ["gaussian", "ring"]
-        x_data = d.train
-        x_gen = rand(rng, g, last(size(x_data))) |> cpu |> Flux.data
-        plt.scatter(x_data[1,:], x_data[2,:], marker=".", label="data", alpha=0.5)
-        plt.scatter(x_gen[1,:],  x_gen[2,:],  marker=".", label="gen",  alpha=0.5)
-        autoset_lim!(x_data)
+    if d.name == "mnist" 
+        Xdata = d.train |> cpu
+        Xgen = rand(rng, g, 32) |> cpu |> Tracker.data
+        MLToolkit.plot!(GrayImages(hcat(Xdata[:,shuffle(rng, 1:last(size(Xdata)))[1:32]], Xgen)))
+    elseif d.name in ["gaussian", "ring"]
+        Xdata = d.train |> cpu
+        Xgen = rand(rng, g, last(size(Xdata))) |> cpu |> Tracker.data
+        plt.scatter(Xdata[1,:], Xdata[2,:], marker=".", label="data", alpha=0.5)
+        plt.scatter(Xgen[1,:],  Xgen[2,:],  marker=".", label="gen",  alpha=0.5)
+        autoset_lim!(Xdata)
         plt.legend(fancybox=true, framealpha=0.5)
     end
 end
 
-function plot!(d::Data, g::Generator, f::Projector)
+function plot!(d::Dataset, g::NeuralSampler, f::Projector)
     rng = MersenneTwister(1)
-    if d.dataset == "mnist" 
-        x_data = d.train
-        x_gen = rand(rng, g, 32) 
-        fx_data = f(x_data) |> cpu |> Flux.data
-        fx_gen = f(x_gen) |> cpu |> Flux.data
-        plot_grayimg!(hcat(fx_data[:,shuffle(rng, 1:last(size(fx_data)))[1:32]], fx_gen))
-    elseif d.dataset in ["gaussian", "ring"]
-        x_data = d.train
-        x_gen = rand(rng, g, last(size(x_data)))
-        fx_data = f(x_data) |> cpu |> Flux.data
-        fx_gen = f(x_gen) |> cpu |> Flux.data
-        plt.scatter(fx_data[1,:], fx_data[2,:], marker=".", label="data", alpha=0.5)
-        plt.scatter(fx_gen[1,:],  fx_gen[2,:],  marker=".", label="gen",  alpha=0.5)
-        autoset_lim!(fx_data)
+    if d.name == "mnist" 
+        Xdata = d.train |> cpu
+        Xgen = rand(rng, g, 32) 
+        fXdata = f(Xdata) |> cpu |> Tracker.data
+        fXgen = f(Xgen) |> cpu |> Tracker.data
+        MLToolkit.plot!(GrayImages(hcat(fXdata[:,shuffle(rng, 1:last(size(fXdata)))[1:32]], fXgen)))
+    elseif d.name in ["gaussian", "ring"]
+        Xdata = d.train |> cpu
+        Xgen = rand(rng, g, last(size(Xdata)))
+        fXdata = f(Xdata) |> cpu |> Tracker.data
+        fXgen = f(Xgen) |> cpu |> Tracker.data
+        plt.scatter(fXdata[1,:], fXdata[2,:], marker=".", label="data", alpha=0.5)
+        plt.scatter(fXgen[1,:],  fXgen[2,:],  marker=".", label="gen",  alpha=0.5)
+        autoset_lim!(fXdata)
         plt.legend(fancybox=true, framealpha=0.5)
     end
 end
 
 parse_csv(T, l) = map(x -> parse(T, x), split(l, ","))
+parse_op(op::String) = eval(Symbol(op))
+parse_op(op) = op
 
-function get_model(args::NamedTuple, data::Data)
+function get_model(args::NamedTuple, dataset::Dataset)
     module_path = pathof(@__MODULE__) |> splitdir |> first |> splitdir |> first
-    logdir = "$(data.dataset)/$(args.model_name)/$(args.exp_name)/$(Dates.format(now(), DATETIME_FMT))"
+    logdir = "$(dataset.name)/$(args.modelname)/$(args.expname)/$(Dates.format(now(), DATETIME_FMT))"
     logger = TBLogger("$module_path/logs/$logdir")
     if args.opt == "adam"
         opt = ADAM(args.lr, (args.beta1, 999f-4))
@@ -139,64 +137,58 @@ function get_model(args::NamedTuple, data::Data)
         opt = RMSProp(args.lr)
     end
     if args.base == "uniform"
-        base = UniformBase(args.D_z)
+        base = UniformNoise(args.Dz)
     elseif args.base == "gaussian"
-        base = GaussianBase(args.D_z)
+        base = GaussianNoise(args.Dz)
     end
-    Dg_h = parse_csv(Int, args.Dg_h)
-    g = Generator(base, args.D_z, Dg_h, data.dim, args.act, args.act_last, args.norm, args.batch_size_gen)
-    if args.model_name == "gan"
-        if args.Dd_h == "conv"
-            d = ConvDiscriminator(data.dim, args.act, args.norm)
+    Dhs_g = parse_csv(Int, args.Dhs_g)
+    act = parse_op(args.act)
+    actlast = parse_op(args.actlast)
+    g = NeuralSampler(base, args.Dz, Dhs_g, dim(dataset), act, actlast, args.norm, args.batchsize_g)
+    if args.modelname == "gan"
+        if args.Dhs_d == "conv"
+            d = ConvDiscriminator(dim(dataset), act, args.norm)
         else
-            Dd_h = parse_csv(Int, args.Dd_h)
-            d = Discriminator(data.dim, Dd_h, args.act, args.norm)
+            Dhs_d = parse_csv(Int, args.Dhs_d)
+            d = DenseDiscriminator(dim(dataset), Dhs_d, act, args.norm)
         end
-        m = GAN(Ref(0), logger, g, Flux.params(g), d, Flux.params(d), opt)
+        m = GAN(logger, opt, g, d)
     else
         sigma = args.sigma == "median" ? [] : parse_csv(Float32, args.sigma)
-        if args.model_name == "mmdnet"
-            m = MMDNet(Ref(0), logger, g, Flux.params(g), opt, sigma)
-        elseif args.model_name == "rmmmdnet"
-            if args.Df_h == "conv"
-                f = ConvProjector(data.dim, args.D_fx, args.act, args.norm)
+        if args.modelname == "mmdnet"
+            m = MMDNet(logger, opt, sigma, g)
+        elseif args.modelname == "rmmmdnet"
+            if args.Dhs_f == "conv"
+                f = ConvProjector(dim(dataset), args.Df, act, args.norm)
             else
-                Df_h = parse_csv(Int, args.Df_h)
-                f = Projector(data.dim, Df_h, args.D_fx, args.act, args.norm)
+                Dhs_f = parse_csv(Int, args.Dhs_f)
+                f = DenseProjector(dim(dataset), Dhs_f, args.Df, act, args.norm)
             end
-            m = RMMMDNet(Ref(0), logger, g, Flux.params(g), f, Flux.params(f), opt, sigma)
+            m = RMMMDNet(logger, opt, sigma, g, f) |> track
         end
     end
-    @info "Init $(args.model_name) with $(nparams(m) |> Humanize.digitsep) parameters" logdir
-    m = use_gpu.x ? gpu(m) : m
-    return m
+    @info "Init $(args.modelname) with $(nparams(m) |> Humanize.digitsep) parameters" logdir
+    return m |> gpu
 end
 
-export get_data, get_model
+function run_exp(args; model=nothing)
+    seed!(args.seed)
+    
+    data = get_data(args.dataset)
+    dataloader = DataLoader(data, args.batchsize)
 
-###
+    model = isnothing(model) ? get_model(args, data) : model
 
-using BSON
-
-function save!(model::AbstractGenerativeModel)
-    model_cpu = model |> RMMMDNets.Flux.cpu
-    model_fname = "$(model.logger.logdir)/model.bson"
-    iter = model.iter
-    weights = Tracker.data.(Flux.params(model))
-    bson(model_fname, Dict(:iter => model.iter, :weights => weights))
-    @info "Saved model at $(iter.x) iterations to $model_fname"
-    return model_fname
+    with_logger(model.logger) do
+        train!(model, dataloader, args.n_epochs; evalevery=100)
+    end
+    evaluate(model, dataloader)
+    
+    modelpath = savemodel(model)
+    
+    return dataloader, model, modelpath
 end
 
-function load!(model::AbstractGenerativeModel, model_fname::String)
-    model_loaded = BSON.load(model_fname)
-    weights = model_loaded[:weights]
-    Flux.loadparams!(model, weights)
-    iter = model_loaded[:iter]
-    model.iter.x = iter.x
-    @info "Loaded model at $(iter.x) iterations from $model_fname"
-end
-
-export save!, load!
+export get_data, get_model, run_exp
 
 end # module
