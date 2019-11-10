@@ -86,3 +86,26 @@ batchsize_g = 200
     sigma = "0.1,1,10"
     Dhs_f = "conv"
     Df = 100
+    
+[cifar10]
+  n_epochs = 10
+  base = "uniform"
+  Dz = 150
+  Dhs_g = "conv"
+  norm = true
+  opt = "adam"
+  beta1 = 5e-1
+  
+  [cifar10.gan]
+    lr = 1e-4
+    Dhs_d = "conv"
+    
+  [cifar10.mmdnet]
+    lr = 1e-3
+    sigma = "1,2,4,8,16"
+    
+  [cifar10.rmmmdnet]
+    lr = 2e-4
+    sigma = "1,2,4,8,16"
+    Dhs_f = "conv"
+    Df = 150
