@@ -32,7 +32,6 @@ batchsize_g = 200
     Df = 5
 
 [ring]
-  n_epochs = 2_000
   base = "gaussian"
   Dz = 20
   Dhs_g = "100,100"
@@ -41,19 +40,57 @@ batchsize_g = 200
   norm = false
 
   [ring.gan]
+    n_epochs = 2_000
     opt = "adam"
     lr = 1e-4
     beta1 = 5e-1
     Dhs_d = "100,100"
 
   [ring.mmdnet]
+    n_epochs = 2_000
     opt = "rmsprop"
     lr = 1e-3
     sigma = "1"
 
   [ring.rmmmdnet]
+    n_epochs = 2_000
     opt = "adam"
     lr = 1e-3
+    beta1 = 5e-1
+    sigma = "1"
+    Dhs_f = "100,100"
+    Df = 10
+    
+  [ring.mmdgan]
+    n_epochs = 4_000
+    opt = "adam"
+    lr = 5e-5
+    beta1 = 5e-1
+    sigma = "1"
+    Dhs_f = "100,100"
+    Df = 10
+    
+[3dring]
+  base = "gaussian"
+  Dz = 20
+  Dhs_g = "100,100"
+  act = "relu"
+  actlast = "identity"
+  norm = false
+  
+  [3dring.rmmmdnet]
+    n_epochs = 2_000
+    opt = "adam"
+    lr = 1e-3
+    beta1 = 5e-1
+    sigma = "1"
+    Dhs_f = "100,100"
+    Df = 10
+
+  [3dring.mmdgan]
+    n_epochs = 4_000
+    opt = "adam"
+    lr = 5e-5
     beta1 = 5e-1
     sigma = "1"
     Dhs_f = "100,100"

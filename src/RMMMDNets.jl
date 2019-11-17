@@ -5,6 +5,8 @@ using Statistics, LinearAlgebra, StatsFuns, Distributions, Humanize, Dates
 using MLDatasets: CIFAR10, MNIST
 using Random: MersenneTwister, shuffle
 using Reexport: @reexport
+using PyCall: pyimport
+pyimport("mpl_toolkits.mplot3d")
 
 @reexport using MLToolkit
 using MLToolkit.Neural: IntIte
@@ -158,6 +160,12 @@ function get_data(name::String)
         N = 1_000
         Xtrain = rand(rng, Ring(8, 2, 2f-1), N)
     end
+    if name == "3dring"
+        N = 1_000
+        Xtrain = rand(rng, Ring(8, 2, 2f-1), N)
+        Ty(θ) = [cos(θ) 0 sin(θ); 0 1 0; -sin(θ) 0 cos(θ)]
+        Xtrain = Ty(π/3) * cat(Xtrain, randn(1, N) * 0.1; dims=1)
+    end
     Xtrain = Xtrain |> gpu
     return Dataset(Xtrain; name=name)
 end
@@ -181,6 +189,15 @@ function plot!(d::Dataset, g::NeuralSampler)
         plt.scatter(Xgen[1,:],  Xgen[2,:],  marker=".", label="gen",  alpha=0.5)
         autoset_lim!(Xdata)
         plt.legend(fancybox=true, framealpha=0.5)
+    elseif d.name == "3dring"
+        Xdata = d.train
+        Xgen = rand(rng, g, last(size(Xdata))) |> cpu
+        fig = plt.gcf()
+        ax = fig.add_subplot(111, projection="3d")
+        ax.scatter(Xdata[1,:], Xdata[2,:], Xdata[3,:], marker=".", label="data", alpha=0.5)
+        ax.scatter(Xgen[1,:], Xgen[2,:], Xgen[3,:], marker=".", label="gen",  alpha=0.5)
+        autoset_lim!(Xdata)
+        ax.legend(fancybox=true, framealpha=0.5)
     end
 end
 
@@ -241,6 +258,13 @@ function get_model(args::NamedTuple, dataset::Dataset)
         sigma = args.sigma == "median" ? [] : parse_csv(Float32, args.sigma)
         if args.modelname == "mmdnet"
             m = MMDNet(logger, opt, sigma, g)
+        elseif args.modelname == "mmdgan"
+            @assert args.Dhs_f != "conv"
+            Dhs_f = parse_csv(Int, args.Dhs_f)
+            Dx = first(dim(dataset))
+            fenc = DenseProjector(Dx, Dhs_f, args.Df, act, args.norm)
+            fdec = DenseProjector(args.Df, Dhs_f, Dx, act, args.norm)
+            m = MMDGAN(logger, opt, sigma, g, fenc, fdec)
         elseif args.modelname == "rmmmdnet"
             if args.Dhs_f == "conv"
                 act = x -> leakyrelu(x, 2f-1)
